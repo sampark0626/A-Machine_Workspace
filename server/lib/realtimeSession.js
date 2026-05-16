@@ -103,45 +103,47 @@ export function handleRealtimeConnection(clientWs) {
     }
   });
 
-  openaiWs.on('open', () => {
-    console.log('[A-Machine] OpenAI Realtime 연결 완료');
-
-    // Configure the session
-    openaiWs.send(JSON.stringify({
-      type: 'session.update',
-      session: {
-        instructions: SYSTEM_PROMPT,
-        voice: currentVoice,
-        input_audio_format: 'pcm16',
-        output_audio_format: 'pcm16',
-        input_audio_transcription: { model: 'whisper-1' },
-        tools: TOOLS,
-        tool_choice: 'auto',
-        turn_detection: {
-          type: 'server_vad',
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 600
-        }
-      }
-    }));
-
-    // Trigger initial greeting
-    openaiWs.send(JSON.stringify({
-      type: 'response.create',
-      response: {
-        modalities: ['text', 'audio'],
-        instructions: '통화가 시작되었습니다. 첫 인사를 해주세요.'
-      }
-    }));
-
-    clientWs.send(JSON.stringify({ type: 'session.ready' }));
-  });
-
   // Forward OpenAI events → Client
   openaiWs.on('message', async (data) => {
     try {
       const event = JSON.parse(data.toString());
+
+      // 1. Initial setup when session is created
+      if (event.type === 'session.created') {
+        console.log('[A-Machine] OpenAI 세션 생성됨');
+        
+        // Configure the session
+        openaiWs.send(JSON.stringify({
+          type: 'session.update',
+          session: {
+            instructions: SYSTEM_PROMPT,
+            voice: currentVoice,
+            input_audio_format: 'pcm16',
+            output_audio_format: 'pcm16',
+            input_audio_transcription: { model: 'whisper-1' },
+            tools: TOOLS,
+            tool_choice: 'auto',
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 600
+            }
+          }
+        }));
+
+        // Trigger initial greeting
+        openaiWs.send(JSON.stringify({
+          type: 'response.create',
+          response: {
+            modalities: ['text', 'audio'],
+            instructions: '통화가 시작되었습니다. 첫 인사를 해주세요.'
+          }
+        }));
+
+        clientWs.send(JSON.stringify({ type: 'session.ready' }));
+        return;
+      }
 
       // Log OpenAI error events
       if (event.type === 'error') {
