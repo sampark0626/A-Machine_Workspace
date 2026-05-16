@@ -144,6 +144,11 @@ export function handleRealtimeConnection(clientWs) {
     try {
       const event = JSON.parse(data.toString());
 
+      // Log OpenAI error events
+      if (event.type === 'error') {
+        console.error('[A-Machine] OpenAI로부터 에러 수신:', JSON.stringify(event.error, null, 2));
+      }
+
       // Handle function calls from the model
       if (event.type === 'response.function_call_arguments.done') {
         await handleFunctionCall(event, openaiWs, clientWs);
@@ -209,8 +214,8 @@ export function handleRealtimeConnection(clientWs) {
     if (openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
   });
 
-  openaiWs.on('close', () => {
-    console.log('[A-Machine] OpenAI 연결 종료');
+  openaiWs.on('close', (code, reason) => {
+    console.log(`[A-Machine] OpenAI 연결 종료 (Code: ${code}, Reason: ${reason})`);
     if (clientWs.readyState === WebSocket.OPEN) {
       clientWs.send(JSON.stringify({ type: 'session.closed' }));
     }
