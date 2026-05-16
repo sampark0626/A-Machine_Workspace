@@ -34,6 +34,11 @@ hf_cache/
 huggingface/
 models/
 
+# Node.js
+node_modules/
+dist/
+build/
+
 # OS and editor
 .DS_Store
 Thumbs.db
