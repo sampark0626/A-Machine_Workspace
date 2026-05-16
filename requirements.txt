@@ -1,0 +1,11 @@
+streamlit
+audio-recorder-streamlit
+streamlit-autorefresh
+torch
+transformers>=4.52.1
+accelerate
+faster-whisper
+google-generativeai
+huggingface_hub
+soundfile
+numpy
