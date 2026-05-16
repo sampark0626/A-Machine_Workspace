@@ -5,7 +5,7 @@ import Dashboard from './components/Dashboard';
 import VoiceSelector from './components/VoiceSelector';
 import SmsNotification from './components/SmsNotification';
 
-const WS_URL = 'ws://localhost:3001/ws';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001/ws';
 
 export default function App() {
   const [callState, setCallState] = useState('idle'); // idle | connecting | active | ended
