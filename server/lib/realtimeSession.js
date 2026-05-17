@@ -4,8 +4,11 @@ import { checkCalendar, createCalendarEvent } from './calendarTools.js';
 import { generateSummary } from './summaryNotifier.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const REALTIME_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17';
+const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2';
+const REALTIME_URL = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`;
 const RECEIVER_NAME = process.env.RECEIVER_NAME || '김부장';
+const DEFAULT_VOICE = process.env.OPENAI_REALTIME_VOICE || 'alloy';
+const AUDIO_SAMPLE_RATE = 24000;
 
 const SYSTEM_PROMPT = `## 역할
 당신은 ${RECEIVER_NAME}님을 대신해 전화를 받는 AI 엔서링머신 에이전트 "A-Machine"입니다.
@@ -94,13 +97,19 @@ export function handleRealtimeConnection(clientWs) {
 
   // Conversation transcript for summary generation
   const transcript = [];
-  let currentVoice = 'alloy';
+  const handledFunctionCalls = new Set();
+  let currentVoice = DEFAULT_VOICE;
+  let sessionReady = false;
 
   // Connect to OpenAI Realtime API
   const openaiWs = new WebSocket(REALTIME_URL, {
     headers: {
       'Authorization': `Bearer ${OPENAI_API_KEY}`
     }
+  });
+
+  openaiWs.on('open', () => {
+    console.log(`[A-Machine] OpenAI Realtime 연결됨 (model=${REALTIME_MODEL})`);
   });
 
   // Forward OpenAI events → Client
@@ -113,52 +122,51 @@ export function handleRealtimeConnection(clientWs) {
         console.log('[A-Machine] OpenAI 세션 생성됨');
         
         // Configure the session
-        openaiWs.send(JSON.stringify({
+        safeSend(openaiWs, {
           type: 'session.update',
-          session: {
-            type: 'realtime',
-            modalities: ['text', 'audio'],
-            instructions: SYSTEM_PROMPT,
-            voice: currentVoice,
-            input_audio_format: 'pcm16',
-            output_audio_format: 'pcm16',
-            input_audio_transcription: { model: 'whisper-1' },
-            tools: TOOLS,
-            tool_choice: 'auto',
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 600
-            }
-          }
-        }));
+          session: buildSessionConfig(currentVoice)
+        });
+        return;
+      }
 
-        // Trigger initial greeting
-        openaiWs.send(JSON.stringify({
+      // Start the greeting only after the server accepts the session settings.
+      if (event.type === 'session.updated' && !sessionReady) {
+        sessionReady = true;
+        safeSend(clientWs, {
+          type: 'session.ready',
+          model: REALTIME_MODEL,
+          voice: currentVoice
+        });
+        safeSend(openaiWs, {
           type: 'response.create',
           response: {
-            instructions: '통화가 시작되었습니다. 첫 인사를 해주세요.'
+            output_modalities: ['audio'],
+            instructions: '통화가 시작되었습니다. 한국어로 짧게 첫 인사를 해주세요.'
           }
-        }));
-
-        clientWs.send(JSON.stringify({ type: 'session.ready' }));
-        return;
+        });
       }
 
       // Log OpenAI error events
       if (event.type === 'error') {
         console.error('[A-Machine] OpenAI로부터 에러 수신:', JSON.stringify(event.error, null, 2));
+        safeSend(clientWs, {
+          type: 'error',
+          message: event.error?.message || 'OpenAI Realtime 오류가 발생했습니다.',
+          error: event.error
+        });
       }
 
       // Handle function calls from the model
       if (event.type === 'response.function_call_arguments.done') {
-        await handleFunctionCall(event, openaiWs, clientWs);
+        await handleFunctionCall(event, openaiWs, clientWs, handledFunctionCalls);
         return;
+      }
+      if (event.type === 'response.done') {
+        await handleFunctionCallsFromResponse(event.response, openaiWs, clientWs, handledFunctionCalls);
       }
 
       // Track transcripts
-      if (event.type === 'response.audio_transcript.done') {
+      if (event.type === 'response.output_audio_transcript.done' || event.type === 'response.audio_transcript.done') {
         transcript.push({ role: 'assistant', text: event.transcript });
       }
       if (event.type === 'conversation.item.input_audio_transcription.completed') {
@@ -166,7 +174,7 @@ export function handleRealtimeConnection(clientWs) {
       }
 
       // Forward to client
-      clientWs.send(data.toString());
+      safeSend(clientWs, event);
     } catch (err) {
       console.error('[A-Machine] OpenAI 이벤트 처리 오류:', err.message);
     }
@@ -180,14 +188,20 @@ export function handleRealtimeConnection(clientWs) {
       // Handle voice change request from client
       if (msg.type === 'voice.change') {
         currentVoice = msg.voice;
-        openaiWs.send(JSON.stringify({
+        safeSend(openaiWs, {
           type: 'session.update',
-          session: { voice: msg.voice }
-        }));
-        clientWs.send(JSON.stringify({
+          session: {
+            audio: {
+              output: {
+                voice: msg.voice
+              }
+            }
+          }
+        });
+        safeSend(clientWs, {
           type: 'voice.changed',
           voice: msg.voice
-        }));
+        });
         console.log(`[A-Machine] 음성 변경: ${msg.voice}`);
         return;
       }
@@ -219,22 +233,77 @@ export function handleRealtimeConnection(clientWs) {
   openaiWs.on('close', (code, reason) => {
     console.log(`[A-Machine] OpenAI 연결 종료 (Code: ${code}, Reason: ${reason})`);
     if (clientWs.readyState === WebSocket.OPEN) {
-      clientWs.send(JSON.stringify({ type: 'session.closed' }));
+      safeSend(clientWs, { type: 'session.closed' });
     }
   });
 
   openaiWs.on('error', (err) => {
     console.error('[A-Machine] OpenAI WebSocket 오류:', err.message);
-    clientWs.send(JSON.stringify({
+    safeSend(clientWs, {
       type: 'error',
       message: `OpenAI 연결 오류: ${err.message}`
-    }));
+    });
   });
 }
 
+function buildSessionConfig(voice) {
+  return {
+    type: 'realtime',
+    model: REALTIME_MODEL,
+    output_modalities: ['audio'],
+    instructions: SYSTEM_PROMPT,
+    tools: TOOLS,
+    tool_choice: 'auto',
+    audio: {
+      input: {
+        format: {
+          type: 'audio/pcm',
+          rate: AUDIO_SAMPLE_RATE
+        },
+        transcription: {
+          model: 'gpt-realtime-whisper',
+          language: 'ko'
+        },
+        turn_detection: {
+          type: 'server_vad',
+          threshold: 0.5,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 600
+        }
+      },
+      output: {
+        format: {
+          type: 'audio/pcm',
+          rate: AUDIO_SAMPLE_RATE
+        },
+        voice,
+        speed: 1.0
+      }
+    }
+  };
+}
+
+function safeSend(ws, payload) {
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
+  }
+}
+
+async function handleFunctionCallsFromResponse(response, openaiWs, clientWs, handledFunctionCalls) {
+  const outputs = response?.output || [];
+  for (const item of outputs) {
+    if (item.type === 'function_call') {
+      await handleFunctionCall(item, openaiWs, clientWs, handledFunctionCalls);
+    }
+  }
+}
+
 /** Execute a function call and return result to OpenAI */
-async function handleFunctionCall(event, openaiWs, clientWs) {
+async function handleFunctionCall(event, openaiWs, clientWs, handledFunctionCalls) {
   const { name, arguments: argsStr, call_id } = event;
+  if (!call_id || handledFunctionCalls.has(call_id)) return;
+  handledFunctionCalls.add(call_id);
+
   console.log(`[A-Machine] Function Call: ${name}`, argsStr);
 
   let result;
@@ -242,11 +311,11 @@ async function handleFunctionCall(event, openaiWs, clientWs) {
     const args = JSON.parse(argsStr);
 
     // Notify client about tool execution
-    clientWs.send(JSON.stringify({
+    safeSend(clientWs, {
       type: 'tool.executing',
       tool: name,
       args
-    }));
+    });
 
     if (name === 'check_calendar') {
       result = await checkCalendar(args.date);
@@ -260,26 +329,27 @@ async function handleFunctionCall(event, openaiWs, clientWs) {
   }
 
   // Notify client about tool result
-  clientWs.send(JSON.stringify({
+  safeSend(clientWs, {
     type: 'tool.result',
     tool: name,
     result
-  }));
+  });
 
   // Return result to OpenAI to continue conversation
-  openaiWs.send(JSON.stringify({
+  safeSend(openaiWs, {
     type: 'conversation.item.create',
     item: {
       type: 'function_call_output',
       call_id,
       output: JSON.stringify(result)
     }
-  }));
+  });
 
   // Trigger model to continue responding
-  openaiWs.send(JSON.stringify({
-    type: 'response.create'
-  }));
+  safeSend(openaiWs, {
+    type: 'response.create',
+    response: { output_modalities: ['audio'] }
+  });
 }
 
 /** Generate summary and send SMS notification on call end */
@@ -289,7 +359,7 @@ async function handleCallEnd(transcript, clientWs, openaiWs) {
   try {
     const summary = await generateSummary(transcript);
 
-    clientWs.send(JSON.stringify({
+    safeSend(clientWs, {
       type: 'call.summary',
       summary,
       receiver: {
@@ -297,14 +367,16 @@ async function handleCallEnd(transcript, clientWs, openaiWs) {
         phone: process.env.RECEIVER_PHONE || '010-1234-5678'
       },
       timestamp: new Date().toISOString()
-    }));
+    });
     
     // Close websockets
     if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
-    clientWs.close();
+    setTimeout(() => {
+      if (clientWs.readyState === WebSocket.OPEN) clientWs.close();
+    }, 250);
   } catch (err) {
     console.error('[A-Machine] 요약 생성 실패:', err.message);
-    clientWs.send(JSON.stringify({
+    safeSend(clientWs, {
       type: 'call.summary',
       summary: {
         text: '요약 생성 중 오류가 발생했습니다.',
@@ -318,10 +390,12 @@ async function handleCallEnd(transcript, clientWs, openaiWs) {
         phone: process.env.RECEIVER_PHONE || '010-1234-5678'
       },
       timestamp: new Date().toISOString()
-    }));
+    });
     
     // Close websockets
     if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
-    clientWs.close();
+    setTimeout(() => {
+      if (clientWs.readyState === WebSocket.OPEN) clientWs.close();
+    }, 250);
   }
 }

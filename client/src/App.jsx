@@ -6,6 +6,41 @@ import VoiceSelector from './components/VoiceSelector';
 import SmsNotification from './components/SmsNotification';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001/ws';
+const OPENAI_AUDIO_RATE = 24000;
+
+function resampleTo24k(input, sourceRate) {
+  if (sourceRate === OPENAI_AUDIO_RATE) return input;
+
+  const ratio = sourceRate / OPENAI_AUDIO_RATE;
+  const outputLength = Math.max(1, Math.round(input.length / ratio));
+  const output = new Float32Array(outputLength);
+
+  for (let i = 0; i < outputLength; i++) {
+    const sourceIndex = i * ratio;
+    const before = Math.floor(sourceIndex);
+    const after = Math.min(before + 1, input.length - 1);
+    const weight = sourceIndex - before;
+    output[i] = input[before] * (1 - weight) + input[after] * weight;
+  }
+
+  return output;
+}
+
+function pcm16ToBase64(float32) {
+  const int16 = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i++) {
+    const sample = Math.max(-1, Math.min(1, float32[i]));
+    int16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+  }
+
+  const bytes = new Uint8Array(int16.buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
 
 export default function App() {
   const [callState, setCallState] = useState('idle'); // idle | connecting | active | ended
@@ -20,7 +55,10 @@ export default function App() {
   const [isModelSpeaking, setIsModelSpeaking] = useState(false);
 
   const wsRef = useRef(null);
-  const audioContextRef = useRef(null);
+  const playbackContextRef = useRef(null);
+  const captureContextRef = useRef(null);
+  const playbackTimeRef = useRef(0);
+  const sessionReadyRef = useRef(false);
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const mediaStreamRef = useRef(null);
@@ -40,22 +78,25 @@ export default function App() {
   // Play audio from base64 PCM16
   const playAudio = useCallback((base64Audio) => {
     try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+      if (!playbackContextRef.current) {
+        playbackContextRef.current = new AudioContext({ sampleRate: OPENAI_AUDIO_RATE });
       }
-      const ctx = audioContextRef.current;
+      const ctx = playbackContextRef.current;
       const raw = atob(base64Audio);
       const bytes = new Uint8Array(raw.length);
       for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
       const pcm16 = new Int16Array(bytes.buffer);
       const float32 = new Float32Array(pcm16.length);
       for (let i = 0; i < pcm16.length; i++) float32[i] = pcm16[i] / 32768;
-      const buffer = ctx.createBuffer(1, float32.length, 24000);
+      const buffer = ctx.createBuffer(1, float32.length, OPENAI_AUDIO_RATE);
       buffer.copyToChannel(float32, 0);
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.connect(ctx.destination);
-      source.start();
+
+      const startAt = Math.max(ctx.currentTime, playbackTimeRef.current);
+      source.start(startAt);
+      playbackTimeRef.current = startAt + buffer.duration;
     } catch (err) {
       console.error('Audio playback error:', err);
     }
@@ -68,33 +109,57 @@ export default function App() {
 
       switch (data.type) {
         case 'session.ready':
+          sessionReadyRef.current = true;
+          playbackTimeRef.current = 0;
           setCallState('active');
           break;
 
+        case 'response.output_audio.delta':
         case 'response.audio.delta':
           setIsModelSpeaking(true);
           playAudio(data.delta);
           break;
 
+        case 'response.output_audio.done':
         case 'response.audio.done':
           setIsModelSpeaking(false);
           break;
 
+        case 'response.output_audio_transcript.done':
         case 'response.audio_transcript.done':
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            text: data.transcript,
-            time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
-          }]);
+          if (data.transcript) {
+            setMessages(prev => [...prev, {
+              role: 'assistant',
+              text: data.transcript,
+              time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+            }]);
+          }
           setIsModelSpeaking(false);
           break;
 
+        case 'response.output_text.done':
+          if (data.text) {
+            setMessages(prev => [...prev, {
+              role: 'assistant',
+              text: data.text,
+              time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+            }]);
+          }
+          break;
+
         case 'conversation.item.input_audio_transcription.completed':
-          setMessages(prev => [...prev, {
-            role: 'user',
-            text: data.transcript,
-            time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
-          }]);
+          if (data.transcript) {
+            setMessages(prev => [...prev, {
+              role: 'user',
+              text: data.transcript,
+              time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+            }]);
+          }
+          break;
+
+        case 'input_audio_buffer.speech_started':
+          playbackTimeRef.current = playbackContextRef.current?.currentTime || 0;
+          setIsModelSpeaking(false);
           break;
 
         case 'tool.executing':
@@ -128,16 +193,22 @@ export default function App() {
         case 'call.summary':
           setSummary(data);
           setCallState('ended');
+          sessionReadyRef.current = false;
           // Show SMS notification after 1.5s delay
           setTimeout(() => setSmsVisible(true), 1500);
+          wsRef.current?.close();
+          wsRef.current = null;
           break;
 
         case 'error':
           console.error('Server error:', data.error?.message || data.message || '알 수 없는 오류');
+          setCallState('idle');
+          sessionReadyRef.current = false;
           break;
 
         case 'session.closed':
           if (callState !== 'ended') setCallState('idle');
+          sessionReadyRef.current = false;
           break;
       }
     } catch (err) {
@@ -153,6 +224,8 @@ export default function App() {
     setMemos([]);
     setSummary(null);
     setElapsed(0);
+    sessionReadyRef.current = false;
+    playbackTimeRef.current = 0;
 
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
@@ -166,7 +239,9 @@ export default function App() {
     ws.onclose = () => {
       console.log('[Client] WebSocket 종료');
       stopMicrophone();
+      sessionReadyRef.current = false;
       setCallState(prev => prev === 'ended' ? 'ended' : 'idle');
+      if (wsRef.current === ws) wsRef.current = null;
     };
 
     // Start microphone capture
@@ -176,8 +251,8 @@ export default function App() {
       });
       mediaStreamRef.current = stream;
 
-      const audioCtx = new AudioContext({ sampleRate: 24000 });
-      audioContextRef.current = audioCtx;
+      const audioCtx = new AudioContext();
+      captureContextRef.current = audioCtx;
       const source = audioCtx.createMediaStreamSource(stream);
 
       // Use ScriptProcessor for PCM extraction (AudioWorklet would be better for prod)
@@ -186,12 +261,10 @@ export default function App() {
 
       processor.onaudioprocess = (e) => {
         if (ws.readyState !== WebSocket.OPEN) return;
+        if (!sessionReadyRef.current) return;
         const float32 = e.inputBuffer.getChannelData(0);
-        const int16 = new Int16Array(float32.length);
-        for (let i = 0; i < float32.length; i++) {
-          int16[i] = Math.max(-32768, Math.min(32767, Math.floor(float32[i] * 32768)));
-        }
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(int16.buffer)));
+        const resampled = resampleTo24k(float32, audioCtx.sampleRate);
+        const base64 = pcm16ToBase64(resampled);
         ws.send(JSON.stringify({
           type: 'input_audio_buffer.append',
           audio: base64
@@ -211,6 +284,10 @@ export default function App() {
       processorRef.current.disconnect();
       processorRef.current = null;
     }
+    if (captureContextRef.current) {
+      captureContextRef.current.close();
+      captureContextRef.current = null;
+    }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(t => t.stop());
       mediaStreamRef.current = null;
@@ -220,12 +297,14 @@ export default function App() {
   // End call
   const endCall = useCallback(() => {
     stopMicrophone();
+    sessionReadyRef.current = false;
     if (wsRef.current) {
       if (wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'call.end' }));
+      } else {
+        wsRef.current.close();
+        wsRef.current = null;
       }
-      wsRef.current.close();
-      wsRef.current = null;
     }
     setCallState('ended');
   }, [stopMicrophone]);

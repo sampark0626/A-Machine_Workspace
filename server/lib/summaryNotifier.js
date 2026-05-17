@@ -1,7 +1,17 @@
 // Call summary generation using OpenAI GPT-4o-mini
 import OpenAI from 'openai';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let openai = null;
+
+function getOpenAIClient() {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY가 설정되지 않았습니다.');
+  }
+  if (!openai) {
+    openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openai;
+}
 
 /**
  * Generate a structured call summary from the conversation transcript
@@ -24,7 +34,7 @@ export async function generateSummary(transcript) {
     .join('\n');
 
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: 'gpt-4o-mini',
       response_format: { type: 'json_object' },
       messages: [
