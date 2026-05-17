@@ -116,6 +116,7 @@ export function handleRealtimeConnection(clientWs) {
         openaiWs.send(JSON.stringify({
           type: 'session.update',
           session: {
+            modalities: ['text', 'audio'],
             instructions: SYSTEM_PROMPT,
             voice: currentVoice,
             input_audio_format: 'pcm16',
@@ -136,7 +137,6 @@ export function handleRealtimeConnection(clientWs) {
         openaiWs.send(JSON.stringify({
           type: 'response.create',
           response: {
-            modalities: ['text', 'audio'],
             instructions: '통화가 시작되었습니다. 첫 인사를 해주세요.'
           }
         }));
