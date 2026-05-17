@@ -117,7 +117,6 @@ export function handleRealtimeConnection(clientWs) {
           type: 'session.update',
           session: {
             type: 'realtime',
-            modalities: ['text', 'audio'],
             instructions: SYSTEM_PROMPT,
             voice: currentVoice,
             input_audio_format: 'pcm16',
