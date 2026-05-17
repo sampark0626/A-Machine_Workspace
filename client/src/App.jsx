@@ -53,6 +53,7 @@ export default function App() {
   const [memos, setMemos] = useState([]);
   const [elapsed, setElapsed] = useState(0);
   const [isModelSpeaking, setIsModelSpeaking] = useState(false);
+  const [echoGuard, setEchoGuard] = useState(true);
 
   const wsRef = useRef(null);
   const playbackContextRef = useRef(null);
@@ -63,6 +64,13 @@ export default function App() {
   const startTimeRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const processorRef = useRef(null);
+  const echoGuardRef = useRef(true);
+  const isModelSpeakingRef = useRef(false);
+
+  const handleToggleEchoGuard = useCallback((val) => {
+    setEchoGuard(val);
+    echoGuardRef.current = val;
+  }, []);
 
   // Timer
   useEffect(() => {
@@ -117,12 +125,14 @@ export default function App() {
         case 'response.output_audio.delta':
         case 'response.audio.delta':
           setIsModelSpeaking(true);
+          isModelSpeakingRef.current = true;
           playAudio(data.delta);
           break;
 
         case 'response.output_audio.done':
         case 'response.audio.done':
           setIsModelSpeaking(false);
+          isModelSpeakingRef.current = false;
           break;
 
         case 'response.output_audio_transcript.done':
@@ -135,6 +145,7 @@ export default function App() {
             }]);
           }
           setIsModelSpeaking(false);
+          isModelSpeakingRef.current = false;
           break;
 
         case 'response.output_text.done':
@@ -160,6 +171,7 @@ export default function App() {
         case 'input_audio_buffer.speech_started':
           playbackTimeRef.current = playbackContextRef.current?.currentTime || 0;
           setIsModelSpeaking(false);
+          isModelSpeakingRef.current = false;
           break;
 
         case 'tool.executing':
@@ -247,7 +259,13 @@ export default function App() {
     // Start microphone capture
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { sampleRate: 24000, channelCount: 1, echoCancellation: true }
+        audio: {
+          sampleRate: 24000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
       mediaStreamRef.current = stream;
 
@@ -262,6 +280,10 @@ export default function App() {
       processor.onaudioprocess = (e) => {
         if (ws.readyState !== WebSocket.OPEN) return;
         if (!sessionReadyRef.current) return;
+        
+        // Echo Guard: AI가 말하는 중이고 에코 방지 모드가 켜져 있으면 마이크 전송 일시 차단
+        if (echoGuardRef.current && isModelSpeakingRef.current) return;
+
         const float32 = e.inputBuffer.getChannelData(0);
         const resampled = resampleTo24k(float32, audioCtx.sampleRate);
         const base64 = pcm16ToBase64(resampled);
@@ -356,6 +378,8 @@ export default function App() {
             messages={messages}
             elapsed={elapsed}
             isModelSpeaking={isModelSpeaking}
+            echoGuard={echoGuard}
+            onToggleEchoGuard={handleToggleEchoGuard}
             onStartCall={startCall}
             onEndCall={endCall}
             formatTime={formatTime}

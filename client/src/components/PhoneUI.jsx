@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react';
 
-export default function PhoneUI({ callState, messages, elapsed, isModelSpeaking, onStartCall, onEndCall, formatTime }) {
+export default function PhoneUI({ callState, messages, elapsed, isModelSpeaking, echoGuard, onToggleEchoGuard, onStartCall, onEndCall, formatTime }) {
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -68,6 +68,23 @@ export default function PhoneUI({ callState, messages, elapsed, isModelSpeaking,
           )}
           <div ref={chatEndRef} />
         </div>
+
+        {/* Echo Guard Option (Only visible when call is active or ready) */}
+        {callState === 'active' && (
+          <div className="echo-guard-wrapper">
+            <div className="echo-guard-toggle" onClick={() => onToggleEchoGuard(!echoGuard)}>
+              <div className={`echo-switch ${echoGuard ? 'active' : ''}`}>
+                <div className="echo-knob" />
+              </div>
+              <span style={{ fontWeight: 600 }}>에코 방지 모드 {echoGuard ? 'ON' : 'OFF'}</span>
+            </div>
+            <p className="echo-guard-tip">
+              {echoGuard 
+                ? "🔊 스피커 사용 중 (스피커 소리가 마이크로 재입력되는 것을 완벽히 방지)" 
+                : "🎧 헤드셋/이어폰 사용 중 (자연스러운 끼어들기/말끊기 활성화)"}
+            </p>
+          </div>
+        )}
 
         {/* Controls */}
         <div className="phone-controls">
