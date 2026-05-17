@@ -6,8 +6,8 @@ import { generateSummary } from './summaryNotifier.js';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2';
 const REALTIME_URL = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`;
-const RECEIVER_NAME = process.env.RECEIVER_NAME || '김부장';
-const DEFAULT_VOICE = process.env.OPENAI_REALTIME_VOICE || 'alloy';
+const RECEIVER_NAME = process.env.RECEIVER_NAME || '수민님';
+const DEFAULT_VOICE = process.env.OPENAI_REALTIME_VOICE || 'sage';
 const AUDIO_SAMPLE_RATE = 24000;
 
 const SYSTEM_PROMPT = `## 역할
@@ -19,6 +19,12 @@ const SYSTEM_PROMPT = `## 역할
 - 간결한 발화 (15초 이내)
 - 적절한 추임새: "네", "그렇군요", "알겠습니다"
 - 너무 길게 말하지 말고, 한 번에 2-3문장 이내로
+
+## 한국어 발화 지침
+- 한국어 발음과 억양을 최대한 자연스럽고 부드럽게 구사하세요.
+- 실제 사람 비서처럼 차분하면서도 명확하게(또박또박) 발음하되, 기계적인 말투(예: 로봇 같은 일정한 톤)를 배제하세요.
+- 문맥상 알맞은 부분에서 약간의 쉼(pause)이나 억양의 강세를 두어, 자연스러운 구어체 대화 톤을 연출하세요.
+- 상대방의 감정선이나 속도에 맞추어 속도를 지나치게 빠르게 하지 마세요.
 
 ## 첫 인사
 통화가 시작되면 반드시 먼저 인사하세요:
@@ -85,7 +91,7 @@ const TOOLS = [
  * 2. Forward audio & events bidirectionally
  * 3. Handle function calls (calendar tools) locally
  */
-export function handleRealtimeConnection(clientWs) {
+export function handleRealtimeConnection(clientWs, req) {
   if (!OPENAI_API_KEY) {
     clientWs.send(JSON.stringify({
       type: 'error',
@@ -99,6 +105,21 @@ export function handleRealtimeConnection(clientWs) {
   const transcript = [];
   const handledFunctionCalls = new Set();
   let currentVoice = DEFAULT_VOICE;
+
+  // Extract voice from query parameter if available
+  if (req && req.url) {
+    try {
+      const url = new URL(req.url, 'http://localhost');
+      const voiceParam = url.searchParams.get('voice');
+      if (voiceParam) {
+        currentVoice = voiceParam;
+        console.log(`[A-Machine] 클라이언트 요청 음성 사용: ${currentVoice}`);
+      }
+    } catch (e) {
+      console.warn('[A-Machine] URL 파싱 실패, 기본값 사용:', e.message);
+    }
+  }
+
   let sessionReady = false;
 
   // Connect to OpenAI Realtime API
@@ -267,7 +288,7 @@ function buildSessionConfig(voice) {
           type: 'server_vad',
           threshold: 0.5,
           prefix_padding_ms: 300,
-          silence_duration_ms: 600
+          silence_duration_ms: 800
         }
       },
       output: {

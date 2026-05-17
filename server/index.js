@@ -37,7 +37,7 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (clientWs, req) => {
   console.log(`[A-Machine] 클라이언트 연결: ${req.socket.remoteAddress}`);
-  handleRealtimeConnection(clientWs);
+  handleRealtimeConnection(clientWs, req);
 });
 
 server.listen(PORT, () => {

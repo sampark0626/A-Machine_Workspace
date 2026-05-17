@@ -45,7 +45,7 @@ function pcm16ToBase64(float32) {
 export default function App() {
   const [callState, setCallState] = useState('idle'); // idle | connecting | active | ended
   const [messages, setMessages] = useState([]);
-  const [currentVoice, setCurrentVoice] = useState('alloy');
+  const [currentVoice, setCurrentVoice] = useState('sage');
   const [summary, setSummary] = useState(null);
   const [smsVisible, setSmsVisible] = useState(false);
   const [toolActivity, setToolActivity] = useState(null);
@@ -239,7 +239,7 @@ export default function App() {
     sessionReadyRef.current = false;
     playbackTimeRef.current = 0;
 
-    const ws = new WebSocket(WS_URL);
+    const ws = new WebSocket(`${WS_URL}?voice=${currentVoice}`);
     wsRef.current = ws;
 
     ws.onopen = () => console.log('[Client] WebSocket 연결됨');
@@ -281,8 +281,12 @@ export default function App() {
         if (ws.readyState !== WebSocket.OPEN) return;
         if (!sessionReadyRef.current) return;
         
-        // Echo Guard: AI가 말하는 중이고 에코 방지 모드가 켜져 있으면 마이크 전송 일시 차단
-        if (echoGuardRef.current && isModelSpeakingRef.current) return;
+        // Echo Guard: AI가 말하는 중이거나 스피커로 오디오가 출력 중이고 에코 방지 모드가 켜져 있으면 마이크 전송 일시 차단
+        const isSpeaking = isModelSpeakingRef.current || (
+          playbackContextRef.current &&
+          playbackContextRef.current.currentTime < (playbackTimeRef.current + 0.3)
+        );
+        if (echoGuardRef.current && isSpeaking) return;
 
         const float32 = e.inputBuffer.getChannelData(0);
         const resampled = resampleTo24k(float32, audioCtx.sampleRate);
@@ -384,7 +388,7 @@ export default function App() {
             onEndCall={endCall}
             formatTime={formatTime}
           />
-          {callState === 'active' && (
+          {callState !== 'ended' && (
             <VoiceSelector
               currentVoice={currentVoice}
               onChangeVoice={changeVoice}

@@ -925,10 +925,78 @@ body {
 @media (max-width: 1024px) {
   .main-grid {
     grid-template-columns: 1fr;
+    gap: 24px;
   }
   .phone-wrapper {
     position: static;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    width: 100%;
+  }
+  .phone-shell {
+    margin: 0 auto;
+  }
+  .voice-selector {
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .app {
+    padding: 16px 20px;
+  }
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+  }
+  .status-badge {
+    align-self: flex-start;
+  }
+  .dashboard {
+    padding: 20px;
+  }
+  .voice-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .app {
+    padding: 12px;
+  }
+  .app-title {
+    font-size: 22px;
+  }
+  .status-cards {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .voice-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .sms-container {
+    width: 92%;
+    max-width: 380px;
+  }
+  .phone-shell {
+    border-radius: 28px;
+    padding: 8px;
+  }
+  .phone-screen {
+    border-radius: 20px;
+    min-height: 600px;
+  }
+  .phone-footer {
+    padding: 20px 16px;
+  }
+  .call-summary-panel {
+    padding: 16px;
   }
 }
