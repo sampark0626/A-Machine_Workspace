@@ -116,6 +116,7 @@ export function handleRealtimeConnection(clientWs) {
         openaiWs.send(JSON.stringify({
           type: 'session.update',
           session: {
+            type: 'realtime',
             modalities: ['text', 'audio'],
             instructions: SYSTEM_PROMPT,
             voice: currentVoice,
