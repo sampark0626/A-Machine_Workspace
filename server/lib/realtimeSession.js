@@ -99,7 +99,8 @@ export function handleRealtimeConnection(clientWs) {
   // Connect to OpenAI Realtime API
   const openaiWs = new WebSocket(REALTIME_URL, {
     headers: {
-      'Authorization': `Bearer ${OPENAI_API_KEY}`
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'OpenAI-Beta': 'realtime=v1'
     }
   });
 
@@ -116,7 +117,7 @@ export function handleRealtimeConnection(clientWs) {
         openaiWs.send(JSON.stringify({
           type: 'session.update',
           session: {
-            type: 'realtime',
+            modalities: ['text', 'audio'],
             instructions: SYSTEM_PROMPT,
             voice: currentVoice,
             input_audio_format: 'pcm16',
