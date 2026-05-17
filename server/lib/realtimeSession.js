@@ -4,7 +4,7 @@ import { checkCalendar, createCalendarEvent } from './calendarTools.js';
 import { generateSummary } from './summaryNotifier.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const REALTIME_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview';
+const REALTIME_URL = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17';
 const RECEIVER_NAME = process.env.RECEIVER_NAME || '김부장';
 
 const SYSTEM_PROMPT = `## 역할
@@ -99,8 +99,7 @@ export function handleRealtimeConnection(clientWs) {
   // Connect to OpenAI Realtime API
   const openaiWs = new WebSocket(REALTIME_URL, {
     headers: {
-      'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      'OpenAI-Beta': 'realtime=v1'
+      'Authorization': `Bearer ${OPENAI_API_KEY}`
     }
   });
 
