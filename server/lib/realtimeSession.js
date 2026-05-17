@@ -116,6 +116,7 @@ export function handleRealtimeConnection(clientWs) {
         openaiWs.send(JSON.stringify({
           type: 'session.update',
           session: {
+            type: 'realtime',
             modalities: ['text', 'audio'],
             instructions: SYSTEM_PROMPT,
             voice: currentVoice,
@@ -193,7 +194,7 @@ export function handleRealtimeConnection(clientWs) {
 
       // Handle call end request
       if (msg.type === 'call.end') {
-        handleCallEnd(transcript, clientWs);
+        handleCallEnd(transcript, clientWs, openaiWs);
         return;
       }
 
@@ -282,7 +283,7 @@ async function handleFunctionCall(event, openaiWs, clientWs) {
 }
 
 /** Generate summary and send SMS notification on call end */
-async function handleCallEnd(transcript, clientWs) {
+async function handleCallEnd(transcript, clientWs, openaiWs) {
   console.log('[A-Machine] 통화 종료 → 요약 생성 중...');
 
   try {
@@ -297,6 +298,10 @@ async function handleCallEnd(transcript, clientWs) {
       },
       timestamp: new Date().toISOString()
     }));
+    
+    // Close websockets
+    if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
+    clientWs.close();
   } catch (err) {
     console.error('[A-Machine] 요약 생성 실패:', err.message);
     clientWs.send(JSON.stringify({
@@ -314,5 +319,9 @@ async function handleCallEnd(transcript, clientWs) {
       },
       timestamp: new Date().toISOString()
     }));
+    
+    // Close websockets
+    if (openaiWs && openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
+    clientWs.close();
   }
 }
