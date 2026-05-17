@@ -1,82 +1,93 @@
-# A-Machine v2 에코 개선, 사전 목소리 선택, 한국어 최적화 및 모바일 반응형 UI 조치 계획서
+# 🎙️ A-Machine v2 한국어 최적화 및 프리미엄 비서 시스템 구현 계획서 (Implementation Plan)
 
-## 1. 개요 및 배경
-A-Machine v2 (OpenAI Realtime API) 배포 이후, 실사용 시나리오와 모바일 데모 과정에서 접수된 세 가지 불편 사항을 완벽하게 수정하기 위한 구현 계획서입니다. 추가적으로 수신자 호칭을 `'김부장'`에서 `'수민님'`으로 세련되게 변경하고, 가장 한국어 구현이 자연스러운 목소리 `'Sage'`를 기본값으로 지정하여 완벽한 시연 환경을 갖추고자 합니다.
-
-### 해결할 문제점 및 개선 요청 사항
-1. **호칭 변경**: '김부장' 대신 트렌디한 **'수민님'** 호칭 적용.
-2. **한국어 최적화 목소리 및 셋팅**: OpenAI Realtime API에서 한국어를 가장 자연스럽고 명확하게 구사하는 지적이고 차분한 여성 음성 **'Sage'**를 기본 설정하고, 한국어 프롬프트 억양 및 속도 셋팅 최적화.
-3. **에코 피드백 및 자가 반복 응답**: AI 스피커 출력이 끝나는 시점과 브라우저의 실제 재생 시간 차이로 인해, 마이크가 AI 목소리를 다시 수집하여 끊임없이 반복 응답하는 문제.
-4. **사전 목소리 선택 불가**: 통화가 시작된 후에만 목소리 변경이 가능하여, 첫 인사("안녕하세요, 수민님의 AI 비서 에이머신입니다...")는 무조건 기본 목소리로 나오는 문제.
-5. **모바일 반응형 UI 엉망**: 1024px 이하 해상도 및 모바일 뷰포트에서 다이얼 카드가 가로로 배치되거나 요소들이 비정상적으로 구겨지고 넘치는 문제.
+본 문서는 OpenAI Realtime API 기반의 대화형 자동 응답기 **A-Machine v2**의 핵심 아키텍처, 성능 튜닝, 오디오 에코 방지, 그리고 한국어 발화 자연스러움 극대화를 위해 수립 및 반영된 종합 구현 계획서입니다. 
 
 ---
 
-## 2. 주요 조치 사항 및 설계
+## 1. 🎯 개요 및 배경
 
-### 가. 호칭 및 한국어 구현 최적화 설정
-- **수신자 정보**: `server/.env` 및 `realtimeSession.js`에서 기본 수신자명을 `'수민님'`으로 수정합니다.
-- **가장 자연스러운 한국어 목소리 적용**: 기본 목소리를 `'alloy'`에서 한국어 발화가 가장 지적이고 발음이 명확하다고 평가받는 **'sage'**로 전면 전환합니다 (`App.jsx` 및 `realtimeSession.js`).
-- **한국어 발화 셋팅 튜닝**: `SYSTEM_PROMPT`에 한국어 억양, 발음 자연스러움, 격식 있는 일정 조율 표현, 그리고 부드럽고 기계적이지 않은 비서 톤앤매너 규칙을 추가합니다.
+A-Machine v2 서비스 배포 후 실시간 통화 시연 과정에서 발신자가 기계적 피로감을 느끼지 않고 통화를 매끄럽게 유지할 수 있도록 대화 및 기술 파이프라인을 전면 혁신하였습니다.
 
-### 나. 에코 방지 수명 주기 강화 (Mic Gate & Web Audio API 동기화)
-- **원인**: `isModelSpeakingRef.current`가 WebSocket 오디오 전달 완료(done) 이벤트와 매핑되어 실제 소리가 완전히 브라우저 스피커로 나오기 전에 마이크 게이트가 열려 에코 루프 발생.
-- **해결**: Web Audio API의 `AudioContext.currentTime`과 스케줄링된 버퍼 재생 시간(`playbackTimeRef.current`)을 직접 비교하여, 실제 재생이 물리적으로 끝날 때까지 마이크 입력을 차단하는 차단 게이트 구현.
-- **여유 안전 버퍼(Safety Padding)**: 물리적인 스피커 소리 감쇠 및 실내 울림(reverberation) 시간을 고려해 `+ 0.3초(300ms)`의 여유 값을 더해 철저히 방어.
+### 📌 개선 및 구현 목표
+1. **수신인 호칭 변경**: 기존의 딱딱한 호칭 '김부장'을 세련되고 친근한 **'수민님'**으로 전격 변경.
+2. **한국어 최적화 목소리 도입**: OpenAI Realtime API 음성 중 한국어 발화 억양 및 발음이 가장 자연스럽고 지적인 **`'Marin'`** 보이스를 기본값으로 지정.
+3. **에코 및 자가 피드백 차단**: 브라우저 오디오 출력 소리가 다시 마이크로 입력되어 무한 반복 답변을 생성하는 피드백 루프의 원천 차단.
+4. **사전 목소리 선택 (Pre-call Selector)**: 통화 시작 전 대기 화면에서 원하는 목소리를 미리 선택하여 첫 인사 발화부터 맞춤형으로 출력되도록 지원.
+5. **모바일 반응형 프리미엄 UI**: 해커톤 오프라인 현장 시연을 고려하여 모바일 기기(아이폰, 갤럭시 등) 액정 내에서 UI 깨짐 없이 완벽하게 동작하는 유연한 화면 설계.
+
+---
+
+## 2. 🛠️ 아키텍처 및 세부 설계
+
+### 가. 실시간 음성 스트리밍 및 Dynamic Voice 연동
+* **구조**: Client ↔ Node.js Server ↔ OpenAI Realtime API 간의 이중 WebSockets 연결 구성.
+* **음성 연동**: 클라이언트 대기 중(`idle`) 또는 연결 중(`connecting`) 화면에 목소리 칩 리스트를 노출합니다. 클라이언트가 선택한 `currentVoice`는 WebSocket 핸드셰이크 요청 시 쿼리 파라미터(`?voice=marin`)로 서버에 전송됩니다.
+* **백엔드 매핑**: 서버 [index.js](file:///c:/Users/SKTelecom/skt/A-Machine_Workspace/server/index.js)는 클라이언트의 `req` 객체를 [realtimeSession.js](file:///c:/Users/SKTelecom/skt/A-Machine_Workspace/server/lib/realtimeSession.js)로 온전히 위임하고, 서버는 `req.url`의 쿼리 파라미터를 파싱하여 `session.created` 최초 세션 셋업 때 이를 dynamic하게 세션에 등록합니다.
+
+### 나. 타임라인 기반 Echo Guard (마이크 게이트 설계)
+* **문제 정의**: AI의 발화가 물리적 스피커를 통해 나오는 도중 브라우저 마이크가 이 소리를 수집하여 OpenAI 서버로 송신, AI가 자신의 말을 다시 경청하고 대답하는 에코 루프 발생.
+* **해결 조치**: 
+  - [App.jsx](file:///c:/Users/SKTelecom/skt/A-Machine_Workspace/client/src/App.jsx)의 마이크 입력 수집부(`onaudioprocess`)에 정밀한 재생 타임라인 비교 연산식 탑재.
+  - Web Audio API의 실제 물리 재생 시점(`playbackContextRef.current.currentTime`)과 데이터 큐 기반의 스케줄링 재생 완료 시점(`playbackTimeRef.current`)을 대조하여 실제 재생이 완료되기 전 및 재생 종료 후 울림 시간(`+ 0.3초`) 동안 마이크 전송을 완벽히 차단.
+  
 ```javascript
+// 재생 중 여부 판별 식 (물리적 재생 시간 + 여유 안전 패딩 300ms)
 const isSpeaking = isModelSpeakingRef.current || (
   playbackContextRef.current &&
   playbackContextRef.current.currentTime < (playbackTimeRef.current + 0.3)
 );
-if (echoGuardRef.current && isSpeaking) return; // 전송 차단
+
+if (echoGuardRef.current && isSpeaking) {
+  // AI 음성이 나오는 동안에는 마이크 입력 데이터를 OpenAI 서버로 보내지 않고 드롭
+  return;
+}
 ```
 
-### 다. 통화 연결 전 목소리 선택 기능 (Pre-call Voice Selector)
-- **프론트엔드**: 
-  - `VoiceSelector` 컴포넌트의 렌더링 조건을 `{callState === 'active'}`에서 `{callState !== 'ended'}`로 확장하여 통화 전 대기 중(`idle`)일 때도 목소리를 고를 수 있도록 배치.
-  - WebSocket 최초 연결 시 선택된 목소리(`currentVoice`)를 쿼리 파라미터(`?voice=alloy`)로 전달.
-- **백엔드**: 
-  - `server/index.js`에서 연결 요청 객체(`req`)를 `handleRealtimeConnection`에 전달.
-  - `realtimeSession.js`에서 `req.url`을 파싱해 클라이언트가 지정한 `voice` 파라미터를 읽고, 최초 세션 생성(`session.created`) 시 해당 목소리로 `session.update`를 수행.
-
-### 라. 모바일 최적화 반응형 UI 개선 (Responsive Design & Media Queries)
-- **1024px 이하 (테블릿/대화면 모바일)**: 
-  - `.phone-wrapper`를 세로 플렉스(`flex-direction: column`)로 변경해 다이얼 카드와 목소리 선택 카드가 위아래로 넓고 예쁘게 배치되도록 수정.
-- **768px 이하 (표준 모바일)**:
-  - 전체 앱 패딩 감소, 헤더 세로 정렬 및 배치 최적화.
-  - 다이얼 카드(`.phone-shell`)의 내부 둥글기 및 여백 조정.
-- **480px 이하 (소형 모바일)**:
-  - 대시보드의 상태 카드(`.status-cards`)를 1열로 변환하여 글씨가 찌그러지는 현상 예방.
-  - 목소리 그리드(`.voice-grid`)를 2열 구조로 변환하여 터치 영역 확보 및 가독성 극대화.
-  - SMS 팝업(`.sms-container`)의 가로 너비가 화면을 뚫고 나가지 않도록 `width: 90%; max-width: 380px`로 개선.
+### 다. 한국어 발화 자연스러움 튜닝 & VAD 제어
+* **음색(Voice)**: 한국어 발음 정확도가 뛰어난 **`'marin'`**을 기본값으로 탑재하고 `sage`, `shimmer`, `alloy`를 보조 리스트로 구비.
+* **지연 및 턴 오버 감지**: 
+  - 일반적인 무음 감지 대신 OpenAI의 최신 **시맨틱 VAD** (`type: "semantic_vad"`, `eagerness: "auto"`)를 도입하여 화자의 말이 문법적/문맥적으로 완료되었는지를 실시간 분석.
+  - 한국어 대화의 호흡 속도를 존중하여 무음 판정 기준 시간을 기존 `600ms`에서 **`800ms`**로 여유롭게 설정하여 말이 끊기는 오조작 방지.
+* **발화 가이드라인 (Micro-Pause & Anti-Duplicate Prompting)**:
+  - 쉼표(`,`)와 말줄임표(`...`)를 텍스트 출력에 전략적으로 활용하여 TTS 엔진이 자연스러운 호흡 쉼 및 억양의 강약을 연출하도록 프롬프팅 최적화.
+  - "알겠습니다", "네, 알겠습니다"와 같은 동조어를 2회 연속 연속 사용하지 않도록 차단하는 **Zero Consecutive Duplicate 정책** 적용.
 
 ---
 
-## 3. 변경 파일 목록
+## 3. 📂 변경 및 구현 대상 파일 목록
 
-### 백엔드 (Server)
-*   **[MODIFY] [server/.env](file:///c:/Users/SKTelecom/skt/A-Machine_Workspace/server/.env)**:
-    - `RECEIVER_NAME=수민님`으로 수정.
-    - `OPENAI_REALTIME_VOICE=sage` 설정 추가.
+### 🔹 백엔드 (Server Layer)
+*   **[MODIFY] [.env](file:///c:/Users/SKTelecom/skt/A-Machine_Workspace/server/.env)**:
+    - 수신자 명칭 `RECEIVER_NAME=수민님`으로 설정 및 `OPENAI_REALTIME_VOICE=marin` 추가.
 *   **[MODIFY] [index.js](file:///c:/Users/SKTelecom/skt/A-Machine_Workspace/server/index.js)**:
-    - `handleRealtimeConnection(clientWs, req)`로 `req` 전달 추가.
+    - WebSocket 접속 시 클라이언트의 HTTP `req` 객체를 세션 핸들러로 넘겨 쿼리 매개변수가 읽히도록 보완.
 *   **[MODIFY] [realtimeSession.js](file:///c:/Users/SKTelecom/skt/A-Machine_Workspace/server/lib/realtimeSession.js)**:
-    - 기본 목소리를 `'sage'`로 설정.
-    - `SYSTEM_PROMPT`에서 호칭 수정 및 한국어 자연스러움 튜닝 규칙 보강.
-    - `req.url` 쿼리 파라미터에서 `voice` 추출하여 최초 세션 음성으로 적용.
+    - 기본 목소리를 `'marin'`으로 초기화.
+    - `req.url` 파싱을 통한 사전 선택 목소리 값 적용 기능 탑재.
+    - 중복 발화 금지, 단축 첫인상, Micro-Pause 연출 기법이 포함된 프리미엄 한국어 페르소나 `SYSTEM_PROMPT` 업데이트.
 
-### 프론트엔드 (Client)
+### 🔹 프론트엔드 (Client Layer)
 *   **[MODIFY] [App.jsx](file:///c:/Users/SKTelecom/skt/A-Machine_Workspace/client/src/App.jsx)**:
-    - `currentVoice` 기본값을 `'sage'`로 설정.
-    - `onaudioprocess`에서 `playbackContextRef.current.currentTime`을 이용한 실시간 에코 차단 필터 적용.
-    - `startCall`에서 `new WebSocket(`${WS_URL}?voice=${currentVoice}`)` 주소로 연결.
-    - `VoiceSelector`가 대기 및 연결 중일 때도 렌더링되도록 조건 조정.
+    - 기본 목소리 상태 값 `'marin'` 반영.
+    - Web Audio API 스케줄링 동기화 기반 에코 가드 필터(`onaudioprocess`) 적용.
+    - WebSocket 연결 수립 시 `${WS_URL}?voice=${currentVoice}` 포맷으로 사전 선택 음성 정보 파라미터 결합.
+    - `VoiceSelector` 노출 범위를 통화 전(`idle`/`connecting`) 상태까지 확대 적용.
 *   **[MODIFY] [index.css](file:///c:/Users/SKTelecom/skt/A-Machine_Workspace/client/src/index.css)**:
-    - 1024px, 768px, 480px 단위의 정교한 반응형 디자인 및 스타일 보완.
+    - 모바일 및 태블릿 대응을 위한 1024px, 768px, 480px 단위의 프리미엄 반응형 미디어 쿼리 적용.
+    - 모바일 대시보드 상태 카드 1열화, 목소리 선택 리스크 2열 배치, SMS 모달 창 깨짐 현상 수정.
 
 ---
 
-## 4. 검증 계획
-- 통화 시작 전 'Sage'로 음성이 설정되어 있는지 확인 후 통화를 개시하여 Shimmer 또는 Sage의 가장 자연스러운 음성인지 파악.
-- 물리적 에코 및 피드백 현상이 완전히 제거되었는지 스피커 통화로 마이크 간섭 여부를 테스트.
-- 모바일 가로/세로 레이아웃이 찌그러짐 없이 완벽한지 에뮬레이터로 더블 체크.
+## 4. 🧪 검증 및 품질 테스트 시나리오
+
+1. **사전 음성 선택 및 동작 검증**:
+   - 통화 시작 전 대기 상태에서 `Marin` 목소리를 클릭한 뒤 다이얼 버튼을 눌러 연결을 시작합니다. 첫 인삿말부터 `Marin` 음색의 차분하고 자연스러운 한국어가 출력되는지 청음합니다.
+2. **에코 및 피드백 방어 검증**:
+   - 이어폰을 끼지 않고 스피커폰 상태로 통화를 진행합니다. AI가 답변할 때 나오는 소리가 마이크로 재흡수되어 무한 반복 답변이나 에코 루프가 생기지 않고 매끄럽게 통화가 이뤄지는지 확인합니다.
+3. **모바일 반응형 테스트**:
+   - 모바일 크롬 브라우저의 기기 시뮬레이터 및 실제 갤럭시/아이폰 실기기를 통해 대시보드 및 상태 창, 통화 UI가 삐져나감 없이 깔끔하게 한 화면 내에 스크롤 안정성이 유지되는지 체크합니다.
+
+---
+
+> [!TIP]
+> 본 구현 계획서의 설계 지침에 맞게 구현된 소스 코드는 빌드 완료 후 Git 원격 저장소(`sampark0626/A-Machine_Workspace`)로 최종 업로드되어 배포의 완결성을 확보하였습니다. 해커톤 기술 경쟁력 입증 시 아키텍처 상의 **'Timeline-based Echo Guard'**와 **'Semantic VAD 기반 한국어 억양 튜닝'**을 독창적 핵심 기술로 적극 어필하십시오.
