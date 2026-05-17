@@ -140,8 +140,7 @@ export function handleRealtimeConnection(clientWs) {
         safeSend(openaiWs, {
           type: 'response.create',
           response: {
-            output_modalities: ['audio'],
-            instructions: '통화가 시작되었습니다. 한국어로 짧게 첫 인사를 해주세요.'
+            output_modalities: ['audio']
           }
         });
       }
