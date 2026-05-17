@@ -7,7 +7,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2';
 const REALTIME_URL = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`;
 const RECEIVER_NAME = process.env.RECEIVER_NAME || '수민';
-const DEFAULT_VOICE = process.env.OPENAI_REALTIME_VOICE || 'sage';
+const DEFAULT_VOICE = process.env.OPENAI_REALTIME_VOICE || 'marin';
 const AUDIO_SAMPLE_RATE = 24000;
 
 const SYSTEM_PROMPT = `## 역할
