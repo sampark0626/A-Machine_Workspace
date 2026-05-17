@@ -131,3 +131,95 @@ Vercel을 통해 React 프론트엔드 앱을 정적 호스팅합니다.
 4.  브라우저 마이크 접근 권한 팝업이 나타나면 **[허용]**을 선택합니다.
 5.  정상적으로 연결되면 AI 비서 "A-Machine"이 첫 인사를 건네며 실시간 대화가 시작됩니다.
 
+---
+
+## 4. 상세 동작 구조 및 설계 (Architecture & Flows)
+
+A-Machine v2는 사용자의 음성을 실시간으로 디지털 파형으로 받아 처리하는 고성능 실시간 스트리밍 아키텍처를 기반으로 설계되었습니다.
+
+### 가. 핵심 기술 사양 (Key Technical Features)
+
+1.  **실시간 실시간 24kHz 리샘플러 (`resampleTo24k`)**:
+    *   사용자의 입력 기기(브라우저 마이크)는 일반적으로 44.1kHz 또는 48kHz Float32 규격으로 입력을 캡처합니다.
+    *   프론트엔드에서 고성능 보간(Interpolation)을 구현하여 OpenAI Realtime API의 규격인 **24kHz PCM16 오디오 버퍼**로 실시간 주파수를 다운샘플링합니다.
+    *   음향이 튀거나 느려지는(음정 저하) 현상을 전면 통제하여, AI 모델이 사용자의 음성을 무손실 수준으로 선명하게 인식하게 만듭니다.
+2.  **오디오 타임 스케줄러 (`playbackTimeRef`)**:
+    *   스트리밍되는 복수의 음성 데이터 조각(Chunk)들을 연속적이고 매끄럽게 재생하기 위해 **Web Audio API 타임라인 예약 시스템**을 사용합니다.
+    *   오디오 패킷이 조각조각 전송될 때 발생하는 지터(Jitter) 현상이나 사운드 오버랩(중첩)을 근본적으로 보완하여, 자연스러운 목소리로 대화를 출력합니다.
+3.  **VAD 기반 발화 중단 및 인터럽션 제어**:
+    *   서버 발화 감지(Server VAD)를 통해 사용자가 말을 가로채기 시작하는 순간(`input_audio_buffer.speech_started` 감지) 클라이언트 오디오 대기열을 강제 초기화합니다.
+    *   대화가 꼬이거나 밀리지 않고 즉각적으로 사용자의 명령에 반응하도록 하여, 마치 실제 전화를 하듯 매끄러운 턴 체인지를 지원합니다.
+4.  **도구 호출 무결성 및 중복 제어**:
+    *   도구(Tool) 호출 시 `call_id` 기반 트래킹을 통해 중복 명령의 병렬 유입을 원천 배제하여, 외부 API나 캘린더 데이터베이스의 신뢰도를 보장합니다.
+
+---
+
+### 나. 서비스 동작 흐름도 (Mermaid Sequence Diagram)
+
+아래의 순서도는 **전화 연결 수립 ➡️ 실시간 대화 및 주파수 변환 ➡️ 도구 호출(캘린더 제어) ➡️ 사용자 인터럽션 ➡️ 통화 종료 및 요약문 문자 발송**에 이르는 모든 단계를 세부적으로 설명합니다.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 사용자 (Browser)
+    participant Client as 프론트엔드 (React)
+    participant Server as 백엔드 (Express/WS)
+    participant OpenAI as OpenAI Realtime API
+
+    %% 1. 통화 시작 세션 수립
+    Note over User, OpenAI: 1단계: 실시간 음성 통화 세션 수립 (GA 규격)
+    User->>Client: [전화 시작] 클릭
+    Client->>Server: WebSocket 연결 요청 (wss://...)
+    Server->>OpenAI: OpenAI Realtime 소켓 연결 수립
+    Note over Server, OpenAI: OpenAI GA 규격 적용<br/>Authorization 헤더 연동 (Beta 헤더 배제)<br/>model = gpt-4o-realtime-preview-2024-12-17
+    OpenAI-->>Server: session.created 수신
+    Server->>OpenAI: session.update (type: 'realtime', tools, VAD 설정 등)
+    OpenAI-->>Server: session.updated 수신
+    Server-->>Client: session.ready 전송 (세션 수립 완료)
+    Server->>OpenAI: response.create (첫 인사 발화 지시)
+
+    %% 2. 음성 데이터 처리 및 대화
+    Note over User, OpenAI: 2단계: 실시간 음성 스트리밍 & 재생 스케줄링
+    OpenAI-->>Server: response.output_audio.delta (PCM16 오디오 수신)
+    Server-->>Client: response.output_audio.delta 중계
+    Client->>Client: playAudio() 가동<br/>playbackTimeRef 기준 순차적 타임라인 스케줄링 예약
+    Client-->>User: 비서 목소리 출력 ("안녕하세요. 김부장님 AI비서...")
+
+    User->>Client: 마이크 실시간 음성 캡처 (48kHz/44.1kHz)
+    Client->>Client: resampleTo24k() 리샘플링 가동<br/>Float32 ➡️ 24kHz PCM16으로 실시간 복원
+    Client->>Server: input_audio_buffer.append 전송
+    Server->>OpenAI: input_audio_buffer.append 중계
+
+    %% 3. 도구 호출 및 의도 분석
+    Note over User, OpenAI: 3단계: 도구 호출 (Function Calling)
+    OpenAI-->>Server: response.function_call_arguments.done (check_calendar 호출)
+    Server->>Server: call_id 중복 검증 및 도구 활성화
+    Server-->>Client: tool.executing (일정 조회 중 화면 표시)
+    Server->>Server: checkCalendar(date) 실행 (Mock 또는 Google Calendar 연동)
+    Server-->>Client: tool.result (일정 정보 전달)
+    Server->>OpenAI: conversation.item.create (도구 실행 결과 입력)
+    Server->>OpenAI: response.create (다음 발화 지시)
+    OpenAI-->>Server: response.output_audio.delta 수신
+    Server-->>Client: 오디오 중계 및 캘린더 내용 출력
+
+    %% 4. 실시간 인터럽션
+    Note over User, OpenAI: 4단계: 실시간 사용자 인터럽션 (VAD 말끊기)
+    User->>Client: (AI가 한참 말하는 중 말을 가로챔) "그 시간 말고 내일은요?"
+    Client->>Server: 마이크 데이터 전송
+    Server->>OpenAI: 마이크 데이터 스트리밍
+    OpenAI-->>Server: input_audio_buffer.speech_started 감지
+    Server-->>Client: input_audio_buffer.speech_started 전달
+    Client->>Client: playbackTimeRef 및 오디오 출력 버퍼 강제 리셋 (즉시 정적 상태)
+    Note over Client: 비서가 말을 멈추고<br/>사용자의 다음 말을 경청
+
+    %% 5. 통화 종료 및 요약 생성
+    Note over User, OpenAI: 5단계: 통화 종료 및 요약 알림 문자 발송
+    User->>Client: [통화 종료] 클릭
+    Client->>Server: call.end 전송
+    Server->>OpenAI: 대화 내역(Transcript) 보관 후 연결 즉시 종료
+    Server->>Server: generateSummary() 호출 (GPT-4o-mini 요약 생성)
+    Server-->>Client: call.summary 전송 (요약 데이터 & 문자 수신 정보)
+    Client->>Client: 마이크 트랙 정지, AudioContext close 및 커넥션 null 초기화
+    Client-->>User: 통화 요약 화면 출력 & SMS 모의 문자 팝업 알림 표출
+
+
