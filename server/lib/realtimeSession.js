@@ -94,7 +94,7 @@ export function handleRealtimeConnection(clientWs) {
 
   // Conversation transcript for summary generation
   const transcript = [];
-  let currentVoice = 'nova';
+  let currentVoice = 'alloy';
 
   // Connect to OpenAI Realtime API
   const openaiWs = new WebSocket(REALTIME_URL, {

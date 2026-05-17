@@ -1,5 +1,4 @@
 const VOICES = [
-  { id: 'nova', name: 'Nova', desc: '밝고 친근한' },
   { id: 'alloy', name: 'Alloy', desc: '균형잡힌' },
   { id: 'echo', name: 'Echo', desc: '차분하고 낮은' },
   { id: 'shimmer', name: 'Shimmer', desc: '부드럽고 따뜻한' },

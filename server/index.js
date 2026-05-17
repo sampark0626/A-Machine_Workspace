@@ -13,6 +13,11 @@ const app = express();
 app.use(cors({ origin: CLIENT_URL }));
 app.use(express.json());
 
+// Welcome / Root endpoint
+app.get('/', (_req, res) => {
+  res.send('A-Machine 서버가 정상적으로 동작 중입니다. 헬스체크는 /health 경로에서 가능합니다.');
+});
+
 // Health check
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: '2.0.0', name: 'A-Machine' });

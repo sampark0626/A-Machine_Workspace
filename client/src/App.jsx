@@ -10,7 +10,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001/ws';
 export default function App() {
   const [callState, setCallState] = useState('idle'); // idle | connecting | active | ended
   const [messages, setMessages] = useState([]);
-  const [currentVoice, setCurrentVoice] = useState('nova');
+  const [currentVoice, setCurrentVoice] = useState('alloy');
   const [summary, setSummary] = useState(null);
   const [smsVisible, setSmsVisible] = useState(false);
   const [toolActivity, setToolActivity] = useState(null);
@@ -133,7 +133,7 @@ export default function App() {
           break;
 
         case 'error':
-          console.error('Server error:', data.message);
+          console.error('Server error:', data.error?.message || data.message || '알 수 없는 오류');
           break;
 
         case 'session.closed':
@@ -166,6 +166,7 @@ export default function App() {
     ws.onclose = () => {
       console.log('[Client] WebSocket 종료');
       stopMicrophone();
+      setCallState(prev => prev === 'ended' ? 'ended' : 'idle');
     };
 
     // Start microphone capture
@@ -219,9 +220,14 @@ export default function App() {
   // End call
   const endCall = useCallback(() => {
     stopMicrophone();
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'call.end' }));
+    if (wsRef.current) {
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'call.end' }));
+      }
+      wsRef.current.close();
+      wsRef.current = null;
     }
+    setCallState('ended');
   }, [stopMicrophone]);
 
   // Change voice
