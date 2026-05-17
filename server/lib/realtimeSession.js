@@ -285,10 +285,9 @@ function buildSessionConfig(voice) {
           language: 'ko'
         },
         turn_detection: {
-          type: 'server_vad',
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 800
+          type: 'semantic_vad',
+          eagerness: 'auto',
+          create_response: true
         }
       },
       output: {
