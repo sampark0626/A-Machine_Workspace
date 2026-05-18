@@ -23,6 +23,18 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: '2.0.0', name: 'A-Machine' });
 });
 
+// Environment verification endpoint (safe for public check, masks secret values)
+app.get('/debug-env', (_req, res) => {
+  res.json({
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ? 'Present' : 'Missing',
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ? 'Present' : 'Missing',
+    GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI ? 'Present' : 'Missing',
+    GOOGLE_REFRESH_TOKEN: process.env.GOOGLE_REFRESH_TOKEN ? `Present (length: ${process.env.GOOGLE_REFRESH_TOKEN.length})` : 'Missing',
+    GOOGLE_CALENDAR_ID: process.env.GOOGLE_CALENDAR_ID ? 'Present' : 'Missing',
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY ? 'Present' : 'Missing'
+  });
+});
+
 // Google Calendar OAuth callback placeholder
 app.get('/auth/google/callback', (req, res) => {
   const { code } = req.query;
