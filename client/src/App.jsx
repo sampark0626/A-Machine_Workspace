@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import './index.css';
 import PhoneUI from './components/PhoneUI';
-import Dashboard from './components/Dashboard';
 import VoiceSelector from './components/VoiceSelector';
 import SmsNotification from './components/SmsNotification';
 
@@ -343,59 +342,36 @@ export default function App() {
     setCurrentVoice(voice);
   }, []);
 
+  const handleResetCallState = useCallback(() => {
+    setCallState('idle');
+    setMessages([]);
+    setSummary(null);
+    setElapsed(0);
+  }, []);
+
   const formatTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   return (
     <div className="app">
-      {/* Header */}
-      <header className="app-header">
-        <div className="app-logo">
-          <div className="logo-icon">A</div>
-          <div>
-            <div className="app-title">A-Machine</div>
-            <div className="app-subtitle">AI Answering Machine Agent v2</div>
-          </div>
-        </div>
-        <div className={`status-badge ${callState === 'active' ? 'active' : callState === 'ended' ? 'ended' : ''}`}>
-          <div className={`status-dot ${callState === 'active' ? 'active' : callState === 'ended' ? 'ended' : ''}`} />
-          {callState === 'idle' && '대기 중'}
-          {callState === 'connecting' && '연결 중...'}
-          {callState === 'active' && `통화 중 · ${formatTime(elapsed)}`}
-          {callState === 'ended' && '통화 종료'}
-        </div>
-      </header>
-
-      {/* Main Grid */}
-      <div className="main-grid">
-        <Dashboard
-          callState={callState}
-          messages={messages}
-          events={events}
-          memos={memos}
-          toolActivity={toolActivity}
-          elapsed={elapsed}
-          summary={summary}
+      <PhoneUI
+        callState={callState}
+        messages={messages}
+        elapsed={elapsed}
+        isModelSpeaking={isModelSpeaking}
+        echoGuard={echoGuard}
+        onToggleEchoGuard={handleToggleEchoGuard}
+        onStartCall={startCall}
+        onEndCall={endCall}
+        formatTime={formatTime}
+        summary={summary}
+        onResetCallState={handleResetCallState}
+      />
+      {callState !== 'ended' && (
+        <VoiceSelector
+          currentVoice={currentVoice}
+          onChangeVoice={changeVoice}
         />
-        <div className="phone-wrapper">
-          <PhoneUI
-            callState={callState}
-            messages={messages}
-            elapsed={elapsed}
-            isModelSpeaking={isModelSpeaking}
-            echoGuard={echoGuard}
-            onToggleEchoGuard={handleToggleEchoGuard}
-            onStartCall={startCall}
-            onEndCall={endCall}
-            formatTime={formatTime}
-          />
-          {callState !== 'ended' && (
-            <VoiceSelector
-              currentVoice={currentVoice}
-              onChangeVoice={changeVoice}
-            />
-          )}
-        </div>
-      </div>
+      )}
 
       {/* SMS Notification Overlay */}
       {smsVisible && summary && (

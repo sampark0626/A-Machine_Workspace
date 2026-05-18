@@ -1,8 +1,9 @@
-# Google Calendar 연동 작업 태스크 리스트
+# A-Machine 스마트폰 전용 UI 전면 개편 태스크 리스트
 
-- `[x]` `getOAuth2Client` 헬퍼 함수 작성 (`GOOGLE_REFRESH_TOKEN` 활용)
-- `[x]` `checkCalendar` 실제 API 연동 및 KST 기준 일정 목록 문자열 포맷팅 구현
-- `[x]` `createCalendarEvent` 실제 API 연동 및 다중 파라미터(summary/start_time, date/startTime 등) 매핑 구현
-- `[x]` 기존 Mock 데이터 생성 및 Mock 헬퍼 함수들 완전히 제거
-- `[x]` 예외 상황 처리 및 자연스러운 한국어 에러 메시지 반환 구현
-- `[x]` `npm run dev` 구동을 통한 서버 빌드 및 문법 상태 로컬 검증
+- `[x]` `index.css` 전면 개편 (데스크톱 그리드 제거, 3D 폰 쉘, 노치, iOS 스타일 최근 통화, 에이닷 액티브 그라데이션 및 아바타 호흡 애니메이션 스타일링)
+- `[x]` `PhoneUI.jsx` 컴포넌트 구현 (iOS 최근 통화 기록 탭 리스트, 녹색 통화 FAB, 노치 및 시스템 상태바, 통화 중 에이닷 아바타 및 호흡 애니메이션, 글래스모피즘 스피커 버블, [음소거/키패드/스피커폰/종료] 4버튼 컨트롤)
+- `[x]` `VoiceSelector.jsx` 컴포넌트 구현 (가로로 슬라이딩되는 미니멀한 캡슐형 알약 버튼 디자인)
+- `[x]` `App.jsx` 개편 (Dashboard 제거 및 PhoneUI 전면 센터링 배치, VoiceSelector를 폰 쉘 하단에 조화롭게 부착)
+- `[x]` 로컬 빌드 검증 및 렌더링 상태 확인
+- `[x]` 작업 산출물 및 문서 정리 (`walkthrough.md` 업데이트)
+- `[ ]` Git commit 및 원격 저장소 push 완료
