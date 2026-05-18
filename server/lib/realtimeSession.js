@@ -279,12 +279,47 @@ export function handleRealtimeConnection(clientWs, req) {
   });
 }
 
+function getDynamicInstructions() {
+  const now = new Date();
+  
+  // Calculate KST time (UTC + 9 hours)
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const kstTime = new Date(utc + (9 * 60 * 60000));
+  
+  const year = kstTime.getFullYear();
+  const month = String(kstTime.getMonth() + 1).padStart(2, '0');
+  const date = String(kstTime.getDate()).padStart(2, '0');
+  const formattedDate = `${year}-${month}-${date}`;
+  
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+  const dayName = dayNames[kstTime.getDay()];
+  
+  const hours = String(kstTime.getHours()).padStart(2, '0');
+  const minutes = String(kstTime.getMinutes()).padStart(2, '0');
+  const formattedTime = `${hours}:${minutes}`;
+
+  return `${SYSTEM_PROMPT}
+
+## 📅 현재 시간 정보 (KST 기준 - 필수 준수)
+- 현재 날짜: ${formattedDate} (${dayName}요일)
+- 현재 시각: ${formattedTime}
+
+## ⚠️ 날짜/시간 도구 호출 및 일정 매칭 지침 (매우 중요)
+1. **상대적 날짜 계산**:
+   - 발신자가 "오늘", "내일", "모레", "이번 주 금요일" 등으로 표현할 경우, **반드시 위의 '현재 날짜' 및 '요일'을 기준으로 정확한 YYYY-MM-DD 날짜를 수식으로 계산하여 도구를 호출**하세요. (예: 현재 날짜가 2026-05-19(화)이고 "내일"을 언급하면 반드시 '2026-05-20'으로 지정)
+2. **일정 제목(Summary) 구성**:
+   - 일정 제목(Summary)은 단순히 "저녁 식사"나 "회의"와 같이 광범위하게 작성하지 마세요.
+   - **발신자가 대화 중 언급한 목적지, 만남 대상, 구체적인 장소나 키워드(예: '일지로 삼가', '을지로 3가', 'OO 부장님')가 있다면 이를 제목에 반드시 포함**하여 가시성 있게 구성하세요. (예: "일지로 삼가 저녁 식사" 또는 "을지로 3가 저녁 약속")
+3. **일정 등록 및 결과 안내**:
+   - 일정을 등록한 후 발신자에게 안내할 때는 등록된 날짜와 요일, 시간을 명확히 복기해 주어 신뢰감을 주세요.`;
+}
+
 function buildSessionConfig(voice) {
   return {
     type: 'realtime',
     model: REALTIME_MODEL,
     output_modalities: ['audio'],
-    instructions: SYSTEM_PROMPT,
+    instructions: getDynamicInstructions(),
     tools: TOOLS,
     tool_choice: 'auto',
     audio: {
