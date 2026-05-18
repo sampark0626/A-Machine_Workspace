@@ -34,6 +34,11 @@
 - **로컬 문법 검사**:
   - `node -c server/lib/calendarTools.js` 명령어를 통한 드라이 런 빌드 검증을 완료했으며, 문법 에러가 존재하지 않음을 확인했습니다.
 
+- **프론트엔드 UI/UX 시각 검증**:
+  - React/Vite 기반의 A-Machine 프리미엄 다크 모드 UI가 깨끗하고 미려하게 렌더링되며, 음성 변경 옵션(Marin 등 10종) 및 통화 인터페이스가 정상 동작 상태임을 검증 완료했습니다.
+
+  ![A-Machine Live UI](./amachine_ui_loaded.png)
+
 ---
 
 ## 향후 권장 사항
