@@ -6,4 +6,4 @@
 - `[x]` `App.jsx` 개편 (Dashboard 제거 및 PhoneUI 전면 센터링 배치, VoiceSelector를 폰 쉘 하단에 조화롭게 부착)
 - `[x]` 로컬 빌드 검증 및 렌더링 상태 확인
 - `[x]` 작업 산출물 및 문서 정리 (`walkthrough.md` 업데이트)
-- `[ ]` Git commit 및 원격 저장소 push 완료
+- `[x]` Git commit 및 원격 저장소 push 완료
