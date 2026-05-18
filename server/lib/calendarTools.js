@@ -13,18 +13,24 @@ const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 let oauthTokens = null;
 
 /**
- * Initialize OAuth2 Client using environment credentials and refresh token
+ * Initialize OAuth2 Client using environment credentials (without enforcing token existence)
  */
-function getOAuth2Client() {
+function getOAuth2ClientWithoutToken() {
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
     throw new Error('Google OAuth 클라이언트 ID 또는 시크릿이 설정되지 않았습니다. .env 파일을 확인해 주세요.');
   }
-
-  const client = new google.auth.OAuth2(
+  return new google.auth.OAuth2(
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
     GOOGLE_REDIRECT_URI
   );
+}
+
+/**
+ * Initialize OAuth2 Client using environment credentials and refresh token
+ */
+function getOAuth2Client() {
+  const client = getOAuth2ClientWithoutToken();
 
   if (oauthTokens) {
     client.setCredentials(oauthTokens);
@@ -37,6 +43,27 @@ function getOAuth2Client() {
   }
 
   return client;
+}
+
+/**
+ * Generate Auth URL for Google OAuth2
+ */
+export function getAuthUrl() {
+  const client = getOAuth2ClientWithoutToken();
+  return client.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: ['https://www.googleapis.com/auth/calendar']
+  });
+}
+
+/**
+ * Exchange Authorization Code for Tokens
+ */
+export async function getTokensFromCode(code) {
+  const client = getOAuth2ClientWithoutToken();
+  const { tokens } = await client.getToken(code);
+  return tokens;
 }
 
 /**
