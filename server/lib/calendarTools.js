@@ -213,8 +213,11 @@ export async function createCalendarEvent(eventData) {
       }
     };
 
-    const voiceStart = formatDateTimeForVoice(startDateTime);
-    const voiceEnd = formatDateTimeForVoice(endDateTime);
+    const registeredStart = response.data.start.dateTime || response.data.start.date || startDateTime;
+    const registeredEnd = response.data.end.dateTime || response.data.end.date || endDateTime;
+
+    const voiceStart = formatDateTimeForVoice(registeredStart);
+    const voiceEnd = formatDateTimeForVoice(registeredEnd);
 
     return `일정이 성공적으로 등록되었습니다. 등록된 일정은 "${eventSummary}"이며, 시간은 ${voiceStart}부터 ${voiceEnd}까지입니다.`;
   } catch (err) {
