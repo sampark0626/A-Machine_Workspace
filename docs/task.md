@@ -1,25 +1,8 @@
-# Task List - A-Machine v2 추가 개선 작업
+# Google Calendar 연동 작업 태스크 리스트
 
-- [x] **1단계: 환경 변수 및 설정 파일 수정**
-    - [x] `server/.env`: `RECEIVER_NAME=수민님`으로 수정, `OPENAI_REALTIME_VOICE=sage` 설정 추가
-- [x] **2단계: 백엔드 (Server) 한국어 최적화 및 쿼리 파라미터 처리**
-    - [x] `server/index.js`: `handleRealtimeConnection` 호출 시 `req` 객체 넘겨주도록 변경
-    - [x] `server/lib/realtimeSession.js`: 
-        - [x] 수신자 호칭 기본값 `수민님`으로 변경
-        - [x] 기본 목소리 `'sage'`로 변경
-        - [x] `req.url`을 파싱하여 클라이언트가 선택한 `voice` 설정 적용
-        - [x] `SYSTEM_PROMPT` 내에 한국어 발화 억양 및 자연스러운 대화 톤앤매너 규칙 보강
-- [x] **3단계: 프론트엔드 (Client) 에코 필터 및 사전 목소리 연동**
-    - [x] `client/src/App.jsx`:
-        - [x] 기본 목소리(`currentVoice`) 상태 값을 `'sage'`로 설정
-        - [x] `onaudioprocess` 내에 `playbackContextRef.current.currentTime`과 `playbackTimeRef.current + 0.3`을 비교하는 에코 차단 마이크 게이트 구현
-        - [x] `startCall`에서 WebSocket 생성 시 `${WS_URL}?voice=${currentVoice}`로 선택한 목소리 연동
-        - [x] `VoiceSelector`를 통화 준비 중(`idle`/`connecting`) 및 통화 중(`active`)에 모두 렌더링되도록 조건 조정
-- [x] **4단계: 모바일 반응형 UI 최적화**
-    - [x] `client/src/index.css`:
-        - [x] 1024px 이하 해상도에서 `.phone-wrapper`를 세로 방향 정렬로 변경
-        - [x] 768px 이하 모바일 화면의 헤더, 패딩 최적화
-        - [x] 480px 이하 소형 화면에서 대시보드 상태 카드 1열 배치, 목소리 그리드 2열 배치로 레이아웃 수정 및 SMS 팝업 너비 오류 조치
-- [x] **5단계: 검증 및 배포**
-    - [x] 로컬 실행 및 시연 테스트
-    - [x] Git 커밋 및 origin/main 브랜치 푸시
+- `[x]` `getOAuth2Client` 헬퍼 함수 작성 (`GOOGLE_REFRESH_TOKEN` 활용)
+- `[x]` `checkCalendar` 실제 API 연동 및 KST 기준 일정 목록 문자열 포맷팅 구현
+- `[x]` `createCalendarEvent` 실제 API 연동 및 다중 파라미터(summary/start_time, date/startTime 등) 매핑 구현
+- `[x]` 기존 Mock 데이터 생성 및 Mock 헬퍼 함수들 완전히 제거
+- `[x]` 예외 상황 처리 및 자연스러운 한국어 에러 메시지 반환 구현
+- `[x]` `npm run dev` 구동을 통한 서버 빌드 및 문법 상태 로컬 검증

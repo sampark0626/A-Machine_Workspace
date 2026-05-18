@@ -1,5 +1,5 @@
 // Google Calendar API integration for function calling
-// Provides check_calendar and create_calendar_event tools
+// Provides checkCalendar and createCalendarEvent tools
 
 import { google } from 'googleapis';
 
@@ -7,38 +7,52 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/auth/google/callback';
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'primary';
+const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 
-// In-memory token storage (for hackathon demo)
+// In-memory token storage (if dynamically updated via OAuth flow)
 let oauthTokens = null;
 
+/**
+ * Initialize OAuth2 Client using environment credentials and refresh token
+ */
 function getOAuth2Client() {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    throw new Error('Google OAuth 클라이언트 ID 또는 시크릿이 설정되지 않았습니다. .env 파일을 확인해 주세요.');
+  }
+
   const client = new google.auth.OAuth2(
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
     GOOGLE_REDIRECT_URI
   );
+
   if (oauthTokens) {
     client.setCredentials(oauthTokens);
+  } else if (GOOGLE_REFRESH_TOKEN) {
+    client.setCredentials({
+      refresh_token: GOOGLE_REFRESH_TOKEN
+    });
+  } else {
+    throw new Error('Google Calendar에 접근하기 위한 Refresh Token이 없습니다. .env 파일의 GOOGLE_REFRESH_TOKEN 설정을 확인해 주세요.');
   }
+
   return client;
 }
 
 /**
  * Check Google Calendar for a given date
- * Returns existing events and available time slots
+ * Returns existing events in a natural voice-friendly Korean format
  */
 export async function checkCalendar(date) {
-  // If Google Calendar is not configured, return mock data for demo
-  if (!GOOGLE_CLIENT_ID || !oauthTokens) {
-    return getMockCalendarData(date);
-  }
-
   try {
     const auth = getOAuth2Client();
     const calendar = google.calendar({ version: 'v3', auth });
 
+    // Retrieve events from 00:00:00 to 23:59:59 KST (+09:00)
     const timeMin = new Date(`${date}T00:00:00+09:00`).toISOString();
     const timeMax = new Date(`${date}T23:59:59+09:00`).toISOString();
+
+    console.log(`[Calendar] ${date} 일정 조회 중...`);
 
     const response = await calendar.events.list({
       calendarId: CALENDAR_ID,
@@ -48,148 +62,143 @@ export async function checkCalendar(date) {
       orderBy: 'startTime',
     });
 
-    const events = (response.data.items || []).map(e => ({
-      title: e.summary,
-      start: e.start.dateTime || e.start.date,
-      end: e.end.dateTime || e.end.date,
-    }));
+    const items = response.data.items || [];
+    if (items.length === 0) {
+      return `${date}에는 등록된 일정이 없습니다.`;
+    }
 
-    const availableSlots = findAvailableSlots(events, date);
+    const eventStrings = items.map(item => {
+      const start = item.start.dateTime || item.start.date;
+      const end = item.end.dateTime || item.end.date;
 
-    return {
-      date,
-      existingEvents: events,
-      availableSlots,
-      message: events.length > 0
-        ? `${date}에 ${events.length}개의 일정이 있습니다.`
-        : `${date}은 일정이 비어있습니다.`
-    };
+      if (item.start.dateTime) {
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+
+        const formatTime = (d) => {
+          const options = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul' };
+          return d.toLocaleTimeString('ko-KR', options);
+        };
+
+        return `${formatTime(startDate)}부터 ${formatTime(endDate)}까지, ${item.summary || '제목 없는 일정'}`;
+      } else {
+        return `하루 종일, ${item.summary || '제목 없는 일정'}`;
+      }
+    });
+
+    return `${date}에 등록되어 있는 일정 목록입니다.\n${eventStrings.map(str => `- ${str}`).join('\n')}`;
   } catch (err) {
-    console.error('[Calendar] 조회 오류:', err.message);
-    return getMockCalendarData(date);
+    console.error('[Calendar] checkCalendar API 호출 오류:', err.stack || err.message);
+    return `죄송합니다. 캘린더 일정을 확인하는 중에 기술적인 문제가 발생했습니다. 수민님께 대신 메모를 남겨드릴까요?`;
   }
 }
 
 /**
  * Create a new event on Google Calendar
+ * Accepts both original model arguments and prompt specified fields
  */
-export async function createCalendarEvent({ summary, start_time, end_time, description }) {
-  if (!GOOGLE_CLIENT_ID || !oauthTokens) {
-    return getMockCreateResult(summary, start_time, end_time);
-  }
-
+export async function createCalendarEvent(eventData) {
   try {
+    const {
+      summary,
+      start_time,
+      end_time,
+      description,
+      date,
+      startTime,
+      endTime,
+      title,
+      callerName,
+      callerNumber
+    } = eventData || {};
+
     const auth = getOAuth2Client();
     const calendar = google.calendar({ version: 'v3', auth });
 
+    // Standardize title/summary
+    const eventSummary = title || summary || '새 일정';
+
+    // Standardize start and end times in ISO 8601 KST format (+09:00)
+    let startDateTime;
+    let endDateTime;
+
+    if (start_time) {
+      startDateTime = start_time;
+    } else if (date && startTime) {
+      const formattedStartTime = startTime.includes(':') && startTime.split(':').length === 2 ? `${startTime}:00` : startTime;
+      startDateTime = `${date}T${formattedStartTime}+09:00`;
+    } else {
+      throw new Error('시작 시간 정보가 없습니다.');
+    }
+
+    if (end_time) {
+      endDateTime = end_time;
+    } else if (date && endTime) {
+      const formattedEndTime = endTime.includes(':') && endTime.split(':').length === 2 ? `${endTime}:00` : endTime;
+      endDateTime = `${date}T${formattedEndTime}+09:00`;
+    } else {
+      throw new Error('종료 시간 정보가 없습니다.');
+    }
+
+    // Enrich description with caller information if available
+    let eventDescription = description || 'A-Machine에서 자동 등록된 일정';
+    if (callerName || callerNumber) {
+      eventDescription += '\n\n[발신자 정보]';
+      if (callerName) eventDescription += `\n이름: ${callerName}`;
+      if (callerNumber) eventDescription += `\n연락처: ${callerNumber}`;
+    }
+
     const event = {
-      summary,
-      description: description || 'A-Machine에서 자동 등록된 일정',
-      start: { dateTime: start_time, timeZone: 'Asia/Seoul' },
-      end: { dateTime: end_time, timeZone: 'Asia/Seoul' },
+      summary: eventSummary,
+      description: eventDescription,
+      start: {
+        dateTime: startDateTime,
+        timeZone: 'Asia/Seoul'
+      },
+      end: {
+        dateTime: endDateTime,
+        timeZone: 'Asia/Seoul'
+      }
     };
+
+    console.log(`[Calendar] 일정 등록 진행 중: "${eventSummary}"...`);
 
     const response = await calendar.events.insert({
       calendarId: CALENDAR_ID,
       resource: event,
     });
 
-    return {
-      success: true,
-      eventId: response.data.id,
-      summary,
-      start: start_time,
-      end: end_time,
-      message: `"${summary}" 일정이 성공적으로 등록되었습니다.`
+    // Formatting for high-quality Korean speech output
+    const formatDateTimeForVoice = (isoStr) => {
+      try {
+        const d = new Date(isoStr);
+        const options = {
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+          timeZone: 'Asia/Seoul'
+        };
+        return d.toLocaleString('ko-KR', options);
+      } catch (e) {
+        return isoStr;
+      }
     };
+
+    const voiceStart = formatDateTimeForVoice(startDateTime);
+    const voiceEnd = formatDateTimeForVoice(endDateTime);
+
+    return `일정이 성공적으로 등록되었습니다. 등록된 일정은 "${eventSummary}"이며, 시간은 ${voiceStart}부터 ${voiceEnd}까지입니다.`;
   } catch (err) {
-    console.error('[Calendar] 생성 오류:', err.message);
-    return getMockCreateResult(summary, start_time, end_time);
+    console.error('[Calendar] createCalendarEvent API 호출 오류:', err.stack || err.message);
+    return `죄송합니다. 일정을 등록하는 중에 오류가 발생했습니다. 나중에 직접 연락하실 수 있도록 메모로 등록해 드릴까요?`;
   }
 }
 
-/** Set OAuth tokens (called after auth flow) */
+/**
+ * Set OAuth tokens dynamically (if needed in advanced flows)
+ */
 export function setOAuthTokens(tokens) {
   oauthTokens = tokens;
-}
-
-// =============== Mock data for demo without real Google Calendar ===============
-
-function getMockCalendarData(date) {
-  // Generate realistic mock schedule data
-  const dayOfWeek = new Date(date).getDay();
-
-  // Weekend — empty
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
-    return {
-      date,
-      existingEvents: [],
-      availableSlots: [
-        { start: '09:00', end: '18:00', label: '종일 비어있음' }
-      ],
-      message: `${date}은 주말이라 일정이 비어있습니다.`
-    };
-  }
-
-  // Weekday — typical business schedule
-  const mockEvents = [
-    { title: '팀 주간회의', start: `${date}T09:00:00+09:00`, end: `${date}T10:00:00+09:00` },
-    { title: '점심 미팅', start: `${date}T12:00:00+09:00`, end: `${date}T13:00:00+09:00` },
-    { title: '프로젝트 리뷰', start: `${date}T15:00:00+09:00`, end: `${date}T16:00:00+09:00` },
-  ];
-
-  return {
-    date,
-    existingEvents: mockEvents,
-    availableSlots: [
-      { start: '10:00', end: '12:00', label: '오전 10시~12시' },
-      { start: '13:00', end: '15:00', label: '오후 1시~3시' },
-      { start: '16:00', end: '18:00', label: '오후 4시~6시' },
-    ],
-    message: `${date}에 3개의 일정이 있고, 오전 10시~12시, 오후 1시~3시, 오후 4시~6시에 미팅이 가능합니다.`
-  };
-}
-
-function getMockCreateResult(summary, start_time, end_time) {
-  return {
-    success: true,
-    eventId: `mock_${Date.now()}`,
-    summary,
-    start: start_time,
-    end: end_time,
-    message: `"${summary}" 일정이 성공적으로 등록되었습니다.`,
-    note: '(데모 모드: 실제 Google Calendar에는 등록되지 않았습니다)'
-  };
-}
-
-function findAvailableSlots(events, date) {
-  const workStart = 9;
-  const workEnd = 18;
-  const slots = [];
-
-  const busyTimes = events.map(e => ({
-    start: new Date(e.start).getHours(),
-    end: new Date(e.end).getHours()
-  })).sort((a, b) => a.start - b.start);
-
-  let cursor = workStart;
-  for (const busy of busyTimes) {
-    if (cursor < busy.start) {
-      slots.push({
-        start: `${String(cursor).padStart(2, '0')}:00`,
-        end: `${String(busy.start).padStart(2, '0')}:00`,
-        label: `${cursor}시~${busy.start}시`
-      });
-    }
-    cursor = Math.max(cursor, busy.end);
-  }
-  if (cursor < workEnd) {
-    slots.push({
-      start: `${String(cursor).padStart(2, '0')}:00`,
-      end: `${String(workEnd).padStart(2, '0')}:00`,
-      label: `${cursor}시~${workEnd}시`
-    });
-  }
-
-  return slots;
 }
