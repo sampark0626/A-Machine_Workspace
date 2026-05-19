@@ -229,10 +229,18 @@ export function handleRealtimeConnection(clientWs, req) {
       // Intercept OpenAI audio output and relay to ElevenLabs STS (if configured)
       if (event.type === 'response.output_audio.delta') {
         if (elevenLabsSTS.isConfigured) {
-          elevenLabsSTS.relayAudioFromOpenAI(event.delta);
+          elevenLabsSTS.handleOpenAiAudioDelta(event.delta);
           return;
         }
       }
+
+      if (event.type === 'response.output_audio.done') {
+        if (elevenLabsSTS.isConfigured) {
+          elevenLabsSTS.triggerSpeechToSpeechConversion();
+          return;
+        }
+      }
+
 
       // Forward to client
       safeSend(clientWs, event);
