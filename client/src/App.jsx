@@ -301,7 +301,7 @@ export default function App() {
     } catch (err) {
       console.error('[Client] 마이크 접근 실패:', err);
     }
-  }, [handleServerMessage]);
+  }, [handleServerMessage, currentVoice, stopMicrophone]);
 
   // Stop microphone
   const stopMicrophone = useCallback(() => {
