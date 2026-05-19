@@ -92,7 +92,7 @@ function pcm16ToBase64(float32) {
 export default function App() {
   const [callState, setCallState] = useState('idle'); // idle | connecting | active | ended
   const [messages, setMessages] = useState([]);
-  const [currentVoice, setCurrentVoice] = useState('clone_minseok');
+  const [currentVoice, setCurrentVoice] = useState('marin');
   const [summary, setSummary] = useState(null);
   const [smsVisible, setSmsVisible] = useState(false);
   const [toolActivity, setToolActivity] = useState(null);

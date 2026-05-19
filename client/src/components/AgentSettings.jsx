@@ -34,17 +34,18 @@ export function loadSettings() {
   }
 }
 
-const VOICES = [
-  { id: 'marin',   name: 'Marin',   desc: '부드럽고 친근한 여성' },
-  { id: 'sage',    name: 'Sage',    desc: '차분하고 명확한 여성' },
-  { id: 'shimmer', name: 'Shimmer', desc: '밝고 생동감 있는 여성' },
-  { id: 'ash',     name: 'Ash',     desc: '중성적이고 안정적' },
-  { id: 'coral',   name: 'Coral',   desc: '따뜻하고 표현력 있는 여성' },
-  { id: 'alloy',   name: 'Alloy',   desc: '균형 잡힌 중성 목소리' },
-  { id: 'echo',    name: 'Echo',    desc: '또렷하고 전문적인 남성' },
-  { id: 'ballad',  name: 'Ballad',  desc: '감성적이고 부드러운 남성' },
-  { id: 'verse',   name: 'Verse',   desc: '역동적이고 표현력 풍부' },
-  { id: 'cedar',   name: 'Cedar',   desc: '깊고 신뢰감 있는 남성' },
+export const VOICES = [
+  { id: 'marin',         name: 'Marin',      desc: '명료하고 친근한 여성 (기본)',  provider: 'openai' },
+  { id: 'sage',          name: 'Sage',        desc: '차분하고 명확한 여성',         provider: 'openai' },
+  { id: 'shimmer',       name: 'Shimmer',     desc: '밝고 생동감 있는 여성',        provider: 'openai' },
+  { id: 'ash',           name: 'Ash',         desc: '중성적이고 안정적',            provider: 'openai' },
+  { id: 'coral',         name: 'Coral',       desc: '따뜻하고 표현력 있는 여성',    provider: 'openai' },
+  { id: 'alloy',         name: 'Alloy',       desc: '균형 잡힌 중성 목소리',        provider: 'openai' },
+  { id: 'echo',          name: 'Echo',        desc: '또렷하고 전문적인 남성',       provider: 'openai' },
+  { id: 'ballad',        name: 'Ballad',      desc: '감성적이고 부드러운 남성',     provider: 'openai' },
+  { id: 'verse',         name: 'Verse',       desc: '역동적이고 표현력 풍부',       provider: 'openai' },
+  { id: 'cedar',         name: 'Cedar',       desc: '깊고 신뢰감 있는 남성',       provider: 'openai' },
+  { id: 'clone_minseok', name: '민석 클론',   desc: '목소리 클론 (ElevenLabs)',     provider: 'elevenlabs', voiceId: 'Da4ldXDTb66CahhogG02' },
 ];
 
 const AUTO_TRIGGER_OPTIONS = [
@@ -78,9 +79,9 @@ export default function AgentSettings({ onClose, onSave, currentVoice, onChangeV
   const removeKeyword = (i) =>
     setSettings(s => ({ ...s, customKeywords: s.customKeywords.filter((_, j) => j !== i) }));
 
-  const handleVoiceChange = (voiceId) => {
+  const handleVoiceChange = (voice) => {
     if (onChangeVoice) {
-      onChangeVoice({ id: voiceId, provider: 'openai' });
+      onChangeVoice(voice);
     }
   };
 
@@ -146,7 +147,7 @@ export default function AgentSettings({ onClose, onSave, currentVoice, onChangeV
               <button
                 key={v.id}
                 className={`model-chip ${currentVoice === v.id ? 'active' : ''}`}
-                onClick={() => handleVoiceChange(v.id)}
+                onClick={() => handleVoiceChange(v)}
               >
                 <span className="model-chip-name">{v.name}</span>
                 <span className="model-chip-desc">{v.desc}</span>

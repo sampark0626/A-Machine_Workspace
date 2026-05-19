@@ -1,17 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-
-const VOICES = [
-  { id: 'marin',   name: 'Marin',   desc: '부드럽고 친근한 여성' },
-  { id: 'sage',    name: 'Sage',    desc: '차분하고 명확한 여성' },
-  { id: 'shimmer', name: 'Shimmer', desc: '밝고 생동감 있는 여성' },
-  { id: 'ash',     name: 'Ash',     desc: '중성적이고 안정적' },
-  { id: 'coral',   name: 'Coral',   desc: '따뜻하고 표현력 있는 여성' },
-  { id: 'alloy',   name: 'Alloy',   desc: '균형 잡힌 중성 목소리' },
-  { id: 'echo',    name: 'Echo',    desc: '또렷하고 전문적인 남성' },
-  { id: 'ballad',  name: 'Ballad',  desc: '감성적이고 부드러운 남성' },
-  { id: 'verse',   name: 'Verse',   desc: '역동적이고 표현력 풍부' },
-  { id: 'cedar',   name: 'Cedar',   desc: '깊고 신뢰감 있는 남성' },
-];
+import { VOICES } from './AgentSettings';
 
 export default function PhoneUI({
   callState,
@@ -443,7 +431,7 @@ export default function PhoneUI({
                     <button
                       key={v.id}
                       className={`voice-picker-item ${currentVoice === v.id ? 'active' : ''}`}
-                      onClick={() => { onChangeVoice(v.id); setShowVoicePicker(false); }}
+                      onClick={() => { onChangeVoice(v); setShowVoicePicker(false); }}
                     >
                       <span className="voice-picker-name">{v.name}</span>
                       <span className="voice-picker-desc">{v.desc}</span>
