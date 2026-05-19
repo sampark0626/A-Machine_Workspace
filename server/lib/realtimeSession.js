@@ -367,6 +367,29 @@ export function handleRealtimeConnection(clientWs, req) {
         return;
       }
 
+      // Handle voice phishing / emergency alert — fixed one-sentence urgent warning
+      if (msg.type === 'agent.alert') {
+        const alertMessages = {
+          voicePhishing: '보이스 피싱이 의심되니 조심하세요',
+        };
+        const alertText = alertMessages[msg.alertType] || '주의하세요';
+        console.log(`[A-Machine] 경고 알림: ${alertText}`);
+        safeSend(clientWs, { type: 'agent.active', reason: alertText });
+        agentRealtimeMode = true;
+        safeSend(openaiWs, {
+          type: 'session.update',
+          session: {
+            type: 'realtime',
+            instructions: `지금 즉시 이 한 문장만 긴박하게 말하세요: "${alertText}" 다른 말은 절대 하지 마세요.`,
+          },
+        });
+        safeSend(openaiWs, {
+          type: 'response.create',
+          response: { output_modalities: ['audio'] },
+        });
+        return;
+      }
+
       // Handle agent invoke (assist mode) — separate Agent AI via agentResponder
       if (msg.type === 'agent.invoke') {
         const reason = msg.reason || '에이전트 호출';

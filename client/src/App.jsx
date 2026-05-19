@@ -31,13 +31,18 @@ function checkTriggers(text, settings, lastTriggerTime) {
   }
   if (now - lastTriggerTime < COOLDOWN_AUTO) return null;
 
+  // 계좌/금융정보 → 보이스피싱 즉각 경고 (별도 alert 타입)
+  if (settings.autoTriggers?.onAccount && TRIGGER_PATTERNS.onAccount.test(text)) {
+    return { trigger: 'alert', alertType: 'voicePhishing' };
+  }
+
   for (const [key, pattern] of Object.entries(TRIGGER_PATTERNS)) {
+    if (key === 'onAccount') continue; // 위에서 처리
     if (settings.autoTriggers?.[key] && pattern.test(text)) {
       const labels = {
         onDateTime: '날짜/시간 언급 감지',
         onPrice: '금액 언급 감지',
         onQuestion: '질문 감지',
-        onAccount: `통화 상대방이 계좌번호 또는 금융 정보를 언급했습니다. 보이스피싱 또는 금융사기 가능성을 확인하고, 개인 금융정보(계좌번호, 비밀번호, 인증번호 등)를 절대 알려주지 말 것을 조용히 귓속말로 경고해 주세요. 발화 내용: "${text}"`,
       };
       return { trigger: 'auto', reason: labels[key] };
     }
@@ -347,9 +352,16 @@ export default function App() {
                 agentWaitingForQuestionRef.current = true;
                 agentTriggerTypeRef.current = 'keyword';
                 lastTriggerTimeRef.current = Date.now();
+              } else if (triggerResult.trigger === 'alert') {
+                // 보이스피싱 등 즉각 고정 경고 — agent.alert으로 서버에 전송 (연속 대화 없음)
+                lastTriggerTimeRef.current = Date.now();
+                agentTriggerTypeRef.current = 'auto';
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(JSON.stringify({ type: 'agent.alert', alertType: triggerResult.alertType }));
+                }
               } else if (wsRef.current?.readyState === WebSocket.OPEN) {
                 lastTriggerTimeRef.current = Date.now();
-                // auto 트리거(계좌/금액 등)는 한 번 경고 후 연속 대화 없이 종료
+                // auto 트리거(금액/날짜 등)는 한 번 경고 후 연속 대화 없이 종료
                 agentTriggerTypeRef.current = triggerResult.trigger;
                 wsRef.current.send(JSON.stringify({ type: 'agent.invoke', ...triggerResult, agentSettings: agentSettingsRef.current }));
               }
@@ -431,17 +443,18 @@ export default function App() {
           }
           break;
 
-        case 'input_audio_buffer.speech_started':
-          if (isAgentActuallyPlaying()) {
-            // 에이전트 발화 중 speech_started → 에코 가드가 마이크를 차단했음에도
-            // 서버 VAD가 반응한 경우. 에코로 간주하고 버퍼를 클리어하여 인터럽트 방지.
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
-            }
-          } else if (agentPlayingRef.current) {
-            // agentPlayingRef는 true지만 AudioContext 기준으로는 아직 재생 시작 전 → 동일하게 에코 처리
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+        case 'input_audio_buffer.speech_started': {
+          const agentStillPlaying = isAgentActuallyPlaying() || agentPlayingRef.current;
+          if (agentStillPlaying) {
+            // 키워드 호출 세션: 사용자 발화 우선 → 에이전트 오디오 즉시 중단, 버퍼 유지
+            if (agentTriggerTypeRef.current === 'keyword' || agentInterruptModeRef.current) {
+              stopAgentAudio();
+              // input_audio_buffer.clear 하지 않음 — 사용자 발화를 그대로 인식
+            } else {
+              // 에코 처리: auto 트리거 혹은 일반 에코 → 버퍼 클리어
+              if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+              }
             }
           } else {
             playbackTimeRef.current = playbackContextRef.current?.currentTime || 0;
@@ -449,6 +462,7 @@ export default function App() {
             isModelSpeakingRef.current = false;
           }
           break;
+        }
 
         case 'tool.executing':
           setToolActivity({ tool: data.tool, args: data.args, status: 'executing' });
