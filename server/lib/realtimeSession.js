@@ -212,6 +212,104 @@ export function handleRealtimeConnection(clientWs, req) {
     }
   });
 
+  // ── 서버 사이드 트리거 감지 (클라이언트 왕복 제거) ──────────────────────
+  const SRV_TRIGGER_PATTERNS = {
+    onDateTime: /오늘|내일|모레|이번\s*주|다음\s*주|월요일|화요일|수요일|목요일|금요일|토요일|일요일|\d+월\s*\d+일|\d+시(?:\s*반)?|오전|오후|언제/,
+    onPrice:    /원|달러|유로|만\s*원|천\s*원|억|백만|천만|\d[\d,]*원/,
+    onQuestion: /어떠세요|어때요|가능한가요|괜찮으세요|어떻게\s*생각|가능할까요|어떠신가요|할\s*수\s*있나요|되나요|맞나요/,
+    onAccount:  /계좌|통장|계좌번호|계좌정보|은행|입금|송금|이체|주민등록번호|카드\s*번호|비밀번호|인증번호|OTP|보안카드/,
+  };
+  let triggerSettings = { voiceKeyword: true, autoTriggers: { onDateTime: true, onPrice: false, onQuestion: false, onAccount: true }, customKeywords: [] };
+  let lastAutoTriggerTime = 0;
+  let lastKeywordTriggerTime = 0;
+  let srvWaitingForQuestion = false;
+  let srvContinuationMode = false;
+  let srvContinuationTimer = null;
+  let srvCurrentTriggerType = 'auto';
+
+  function invokeAgentRealtime(question, triggerType) {
+    srvCurrentTriggerType = triggerType;
+    safeSend(clientWs, { type: 'agent.active', reason: question, triggerType });
+    agentRealtimeMode = true;
+    const recentTranscript = transcript.slice(-10);
+    const conversationText = recentTranscript.length > 0
+      ? '\n\n[최근 대화 맥락]\n' + recentTranscript.map(t => {
+          const label = t.role === 'agent' ? '에이전트' : t.role === 'receiver' ? '수신자' : '발신자';
+          return `${label}: ${t.text}`;
+        }).join('\n')
+      : '';
+    safeSend(openaiWs, {
+      type: 'session.update',
+      session: { type: 'realtime', instructions: buildAgentInstructions(assistContext) + conversationText + `\n\n지금 바로 이 질문에 답하세요: ${question}` },
+    });
+    safeSend(openaiWs, { type: 'response.create', response: { output_modalities: ['audio'] } });
+    console.log(`[A-Machine] 서버 트리거 → 에이전트 (${triggerType}): ${String(question).substring(0, 60)}`);
+  }
+
+  function sendVoicePhishingAlert() {
+    const alertText = '보이스 피싱이 의심되니 조심하세요';
+    srvCurrentTriggerType = 'auto';
+    safeSend(clientWs, { type: 'agent.active', reason: alertText, triggerType: 'auto' });
+    agentRealtimeMode = true;
+    safeSend(openaiWs, {
+      type: 'session.update',
+      session: { type: 'realtime', instructions: `지금 즉시 이 한 문장만 긴박하게 말하세요: "${alertText}" 다른 말은 절대 하지 마세요.` },
+    });
+    safeSend(openaiWs, { type: 'response.create', response: { output_modalities: ['audio'] } });
+    console.log('[A-Machine] 보이스피싱 경고 발송');
+  }
+
+  function detectAndHandleTrigger(text) {
+    if (agentRealtimeMode) return;
+    const now = Date.now();
+    if (srvContinuationMode) {
+      srvContinuationMode = false;
+      if (srvContinuationTimer) { clearTimeout(srvContinuationTimer); srvContinuationTimer = null; }
+      invokeAgentRealtime(text, 'keyword');
+      return;
+    }
+    if (srvWaitingForQuestion) {
+      srvWaitingForQuestion = false;
+      invokeAgentRealtime(text, 'keyword');
+      return;
+    }
+    if (triggerSettings.voiceKeyword !== false && /에이전트/.test(text)) {
+      if (now - lastKeywordTriggerTime >= 3000) {
+        lastKeywordTriggerTime = now;
+        const after = text.match(/에이전트[야아,!]?\s*(.+)/s);
+        const question = after?.[1]?.trim();
+        if (question) {
+          invokeAgentRealtime(question, 'keyword');
+        } else {
+          srvWaitingForQuestion = true;
+        }
+        return;
+      }
+    }
+    if (now - lastAutoTriggerTime < 10000) return;
+    if (triggerSettings.autoTriggers?.onAccount && SRV_TRIGGER_PATTERNS.onAccount.test(text)) {
+      lastAutoTriggerTime = now;
+      sendVoicePhishingAlert();
+      return;
+    }
+    for (const [key, pattern] of Object.entries(SRV_TRIGGER_PATTERNS)) {
+      if (key === 'onAccount') continue;
+      if (triggerSettings.autoTriggers?.[key] && pattern.test(text)) {
+        lastAutoTriggerTime = now;
+        const labels = { onDateTime: '날짜/시간 언급 감지', onPrice: '금액 언급 감지', onQuestion: '질문 감지' };
+        invokeAgentRealtime(labels[key], 'auto');
+        return;
+      }
+    }
+    for (const kw of (triggerSettings.customKeywords || [])) {
+      if (kw && text.includes(kw)) {
+        lastAutoTriggerTime = now;
+        invokeAgentRealtime(`키워드 감지: "${kw}"`, 'auto');
+        return;
+      }
+    }
+  }
+
   openaiWs.on('open', () => {
     console.log(`[A-Machine] OpenAI Realtime 연결됨 (model=${REALTIME_MODEL})`);
   });
@@ -276,6 +374,15 @@ export function handleRealtimeConnection(clientWs, req) {
           if (lastAgentText) transcript.push({ role: 'agent', text: lastAgentText });
         } else if (event.type === 'response.done') {
           agentRealtimeMode = false;
+          // 키워드 호출 시 25초 연속 대화 모드 (서버 관리)
+          if (srvCurrentTriggerType === 'keyword') {
+            srvContinuationMode = true;
+            if (srvContinuationTimer) clearTimeout(srvContinuationTimer);
+            srvContinuationTimer = setTimeout(() => {
+              srvContinuationMode = false;
+              srvContinuationTimer = null;
+            }, 25000);
+          }
           // 어시스트 모드 instructions + turn_detection 원복
           if (isAssistMode) {
             safeSend(openaiWs, {
@@ -325,6 +432,8 @@ export function handleRealtimeConnection(clientWs, req) {
       }
       if (event.type === 'conversation.item.input_audio_transcription.completed') {
         transcript.push({ role: 'user', text: event.transcript });
+        // 어시스트 모드: 서버에서 직접 트리거 감지 (클라이언트 왕복 없음)
+        if (isAssistMode) detectAndHandleTrigger(event.transcript);
       }
 
       // Intercept OpenAI audio output and relay to ElevenLabs STS (if configured)
@@ -364,6 +473,59 @@ export function handleRealtimeConnection(clientWs, req) {
           session: buildAssistSessionConfig(currentVoice, assistContext)
         });
         safeSend(clientWs, { type: 'mode.switched', mode: 'assist' });
+        return;
+      }
+
+      // Settings sync from client (trigger settings for server-side detection)
+      if (msg.type === 'settings.update') {
+        if (msg.agentSettings) {
+          triggerSettings = {
+            voiceKeyword: msg.agentSettings.voiceKeyword ?? true,
+            autoTriggers: msg.agentSettings.autoTriggers || {},
+            customKeywords: msg.agentSettings.customKeywords || [],
+          };
+          console.log('[A-Machine] 트리거 설정 동기화:', JSON.stringify(triggerSettings.autoTriggers));
+        }
+        return;
+      }
+
+      // Button-triggered agent listen (server waits for next utterance)
+      if (msg.type === 'agent.listen') {
+        srvWaitingForQuestion = true;
+        lastKeywordTriggerTime = Date.now();
+        console.log('[A-Machine] 에이전트 대기 모드 (버튼)');
+        return;
+      }
+
+      // Cancel continuation mode (쉿 command)
+      if (msg.type === 'agent.cancel') {
+        srvContinuationMode = false;
+        srvWaitingForQuestion = false;
+        if (srvContinuationTimer) { clearTimeout(srvContinuationTimer); srvContinuationTimer = null; }
+        console.log('[A-Machine] 에이전트 대화 취소');
+        return;
+      }
+
+      // Handle voice phishing / emergency alert — fixed one-sentence urgent warning
+      if (msg.type === 'agent.alert') {
+        const alertMessages = {
+          voicePhishing: '보이스 피싱이 의심되니 조심하세요',
+        };
+        const alertText = alertMessages[msg.alertType] || '주의하세요';
+        console.log(`[A-Machine] 경고 알림: ${alertText}`);
+        safeSend(clientWs, { type: 'agent.active', reason: alertText });
+        agentRealtimeMode = true;
+        safeSend(openaiWs, {
+          type: 'session.update',
+          session: {
+            type: 'realtime',
+            instructions: `지금 즉시 이 한 문장만 긴박하게 말하세요: "${alertText}" 다른 말은 절대 하지 마세요.`,
+          },
+        });
+        safeSend(openaiWs, {
+          type: 'response.create',
+          response: { output_modalities: ['audio'] },
+        });
         return;
       }
 

@@ -4,53 +4,6 @@ import PhoneUI from './components/PhoneUI';
 import SmsNotification from './components/SmsNotification';
 import AgentSettings, { loadSettings } from './components/AgentSettings';
 
-// ── 트리거 패턴 ────────────────────────────────────────────────────────────
-const TRIGGER_PATTERNS = {
-  onDateTime: /오늘|내일|모레|이번\s*주|다음\s*주|월요일|화요일|수요일|목요일|금요일|토요일|일요일|\d+월\s*\d+일|\d+시(?:\s*반)?|오전|오후|언제/,
-  onPrice:    /원|달러|유로|만\s*원|천\s*원|억|백만|천만|\d[\d,]*원/,
-  onQuestion: /어떠세요|어때요|가능한가요|괜찮으세요|어떻게\s*생각|가능할까요|어떠신가요|할\s*수\s*있나요|되나요|맞나요/,
-  onAccount:  /계좌|통장|계좌번호|계좌정보|은행|입금|송금|이체|주민등록번호|카드\s*번호|비밀번호|인증번호|OTP|보안카드/,
-};
-const COOLDOWN_KEYWORD = 3000;
-const COOLDOWN_AUTO = 10000;
-
-function checkTriggers(text, settings, lastTriggerTime) {
-  if (!settings || settings.callMode !== 'assist') return null;
-  const now = Date.now();
-
-  if (settings.voiceKeyword !== false && /에이전트/.test(text)) {
-    if (now - lastTriggerTime >= COOLDOWN_KEYWORD) {
-      const after = text.match(/에이전트[야아,!]?\s*(.+)/s);
-      const question = after?.[1]?.trim();
-      if (question) {
-        return { trigger: 'keyword', reason: question };
-      } else {
-        return { trigger: 'keyword', waitForQuestion: true };
-      }
-    }
-  }
-  if (now - lastTriggerTime < COOLDOWN_AUTO) return null;
-
-  for (const [key, pattern] of Object.entries(TRIGGER_PATTERNS)) {
-    if (settings.autoTriggers?.[key] && pattern.test(text)) {
-      const labels = {
-        onDateTime: '날짜/시간 언급 감지',
-        onPrice: '금액 언급 감지',
-        onQuestion: '질문 감지',
-        onAccount: `통화 상대방이 계좌번호 또는 금융 정보를 언급했습니다. 보이스피싱 또는 금융사기 가능성을 확인하고, 개인 금융정보(계좌번호, 비밀번호, 인증번호 등)를 절대 알려주지 말 것을 조용히 귓속말로 경고해 주세요. 발화 내용: "${text}"`,
-      };
-      return { trigger: 'auto', reason: labels[key] };
-    }
-  }
-
-  for (const kw of (settings.customKeywords || [])) {
-    if (kw && text.includes(kw)) {
-      return { trigger: 'auto', reason: `키워드 감지: "${kw}"` };
-    }
-  }
-
-  return null;
-}
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3001/ws';
 const OPENAI_AUDIO_RATE = 24000;
@@ -118,7 +71,6 @@ export default function App() {
   const echoGuardRef = useRef(true);
   const isModelSpeakingRef = useRef(false);
   const agentSettingsRef = useRef(agentSettings);
-  const lastTriggerTimeRef = useRef(0);
   const speakerRoleRef = useRef('caller');
   const agentSourceNodesRef = useRef([]);       // 재생 중인 에이전트 오디오 소스 노드
   const agentGainNodeRef = useRef(null);        // GainNode — gain=0으로 즉각 무음 처리
@@ -126,10 +78,8 @@ export default function App() {
   const agentPlaybackTimeRef = useRef(0);       // 에이전트 전용 스케줄링 시각 (에코 가드와 분리)
   const agentPlaybackEndTimeRef = useRef(0);    // AudioContext 기준 실제 재생 종료 시각
   const agentPassiveTimerRef = useRef(null);         // passive 지연 타이머
-  const agentInterruptModeRef = useRef(false);       // 인터럽트 대기 중 (다음 발화 = 분류 대상)
-  const agentContinuationTimerRef = useRef(null);    // 연속 대화 자동 종료 타이머
-  const agentWaitingForQuestionRef = useRef(false);  // "에이전트야" 후 질문 대기 중
   const agentMutedRef = useRef(false);               // 쉿 명령 후 오디오 차단
+  const lastAgentTriggerTypeRef = useRef('auto');    // 서버 agent.active의 triggerType ('keyword'|'auto')
   const lastAgentTextRef = useRef('');
 
   useEffect(() => { agentSettingsRef.current = agentSettings; }, [agentSettings]);
@@ -286,29 +236,16 @@ export default function App() {
 
         case 'conversation.item.input_audio_transcription.completed':
           if (data.transcript) {
-            // 쉿 명령: 에이전트 즉시 무음 처리 (서버 분류 없음)
-            if (/쉿/.test(data.transcript) && (isAgentActuallyPlaying() || agentInterruptModeRef.current)) {
+            // 쉿 명령: 에이전트 오디오 즉시 중단 + 서버 연속 대화 취소
+            if (/쉿/.test(data.transcript) && isAgentActuallyPlaying()) {
               stopAgentAudio();
-              agentInterruptModeRef.current = false;
               agentMutedRef.current = true;
               setAgentStatus('passive');
+              wsRef.current?.send(JSON.stringify({ type: 'agent.cancel' }));
               break;
             }
 
-            // 에이전트 인터럽트 모드: 발화를 분류 대상으로 서버에 전송
-            if (agentInterruptModeRef.current) {
-              agentInterruptModeRef.current = false;
-              console.log(`[Client] 인터럽트 발화 전송: "${data.transcript}"`);
-              if (wsRef.current?.readyState === WebSocket.OPEN) {
-                wsRef.current.send(JSON.stringify({
-                  type: 'agent.interrupt',
-                  userText: data.transcript,
-                  agentSettings: agentSettingsRef.current,
-                }));
-              }
-              break;
-            }
-
+            // 메시지 표시 (트리거 감지는 서버에서 직접 처리)
             const role = agentSettingsRef.current?.callMode === 'assist'
               ? speakerRoleRef.current
               : 'user';
@@ -317,51 +254,14 @@ export default function App() {
               text: data.transcript,
               time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
             }]);
-
-            // "에이전트야" 후 질문 대기 중 → 이 발화가 질문
-            if (agentWaitingForQuestionRef.current) {
-              agentWaitingForQuestionRef.current = false;
-              lastTriggerTimeRef.current = Date.now();
-              if (wsRef.current?.readyState === WebSocket.OPEN) {
-                wsRef.current.send(JSON.stringify({
-                  type: 'agent.invoke',
-                  trigger: 'keyword',
-                  reason: data.transcript,
-                  agentSettings: agentSettingsRef.current,
-                }));
-              }
-              break;
-            }
-
-            // 어시스트 모드 트리거 감지
-            const triggerResult = checkTriggers(
-              data.transcript,
-              agentSettingsRef.current,
-              lastTriggerTimeRef.current
-            );
-            if (triggerResult) {
-              if (triggerResult.waitForQuestion) {
-                // 질문 없이 호출어만 → 다음 발화 대기
-                agentWaitingForQuestionRef.current = true;
-                lastTriggerTimeRef.current = Date.now();
-              } else if (wsRef.current?.readyState === WebSocket.OPEN) {
-                lastTriggerTimeRef.current = Date.now();
-                wsRef.current.send(JSON.stringify({ type: 'agent.invoke', ...triggerResult, agentSettings: agentSettingsRef.current }));
-              }
-            }
           }
           break;
 
         case 'agent.active':
-          agentInterruptModeRef.current = false;
+          lastAgentTriggerTypeRef.current = data.triggerType || 'auto';
           agentMutedRef.current = false;
           agentSourceNodesRef.current = [];
           agentPlayingRef.current = false;
-          // 연속 대화 자동 종료 타이머 취소
-          if (agentContinuationTimerRef.current) {
-            clearTimeout(agentContinuationTimerRef.current);
-            agentContinuationTimerRef.current = null;
-          }
           // GainNode gain 복원 (쉿/stopAgentAudio 후 다음 응답 재생 가능하게)
           if (agentGainNodeRef.current) {
             agentGainNodeRef.current.gain.setValueAtTime(1, 0);
@@ -371,8 +271,7 @@ export default function App() {
 
         case 'agent.passive': {
           // 서버는 청크 전송 직후 passive를 보내지만 AudioContext는 아직 재생 중
-          // → 실제 재생 종료 시각까지 기다렸다가 passive 처리
-          agentInterruptModeRef.current = false;
+          // → 실제 재생 종료 시각까지 기다렸다가 passive 처리 (연속 대화는 서버가 관리)
           const ctx = playbackContextRef.current;
           const remaining = ctx
             ? Math.max(0, (agentPlaybackEndTimeRef.current - ctx.currentTime) * 1000)
@@ -385,14 +284,6 @@ export default function App() {
             agentPlaybackTimeRef.current = 0;
             agentPassiveTimerRef.current = null;
             setAgentStatus('passive');
-            // 에이전트 발화 완료 후 연속 대화 모드 진입
-            // — 다음 사용자 발화를 자동으로 에이전트 continuation으로 처리
-            agentInterruptModeRef.current = true;
-            if (agentContinuationTimerRef.current) clearTimeout(agentContinuationTimerRef.current);
-            agentContinuationTimerRef.current = setTimeout(() => {
-              agentInterruptModeRef.current = false;
-              agentContinuationTimerRef.current = null;
-            }, 25000); // 25초 침묵 시 연속 대화 모드 종료
           }, remaining + 100);
           break;
         }
@@ -424,17 +315,18 @@ export default function App() {
           }
           break;
 
-        case 'input_audio_buffer.speech_started':
-          if (isAgentActuallyPlaying()) {
-            // 에이전트 발화 중 speech_started → 에코 가드가 마이크를 차단했음에도
-            // 서버 VAD가 반응한 경우. 에코로 간주하고 버퍼를 클리어하여 인터럽트 방지.
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
-            }
-          } else if (agentPlayingRef.current) {
-            // agentPlayingRef는 true지만 AudioContext 기준으로는 아직 재생 시작 전 → 동일하게 에코 처리
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+        case 'input_audio_buffer.speech_started': {
+          const agentStillPlaying = isAgentActuallyPlaying() || agentPlayingRef.current;
+          if (agentStillPlaying) {
+            // 키워드 호출 세션: 사용자 발화 우선 → 에이전트 오디오 즉시 중단, 버퍼 유지
+            if (lastAgentTriggerTypeRef.current === 'keyword') {
+              stopAgentAudio();
+              // input_audio_buffer.clear 하지 않음 — 사용자 발화를 그대로 인식
+            } else {
+              // 에코 처리: auto 트리거 혹은 일반 에코 → 버퍼 클리어
+              if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+              }
             }
           } else {
             playbackTimeRef.current = playbackContextRef.current?.currentTime || 0;
@@ -442,6 +334,7 @@ export default function App() {
             isModelSpeakingRef.current = false;
           }
           break;
+        }
 
         case 'tool.executing':
           setToolActivity({ tool: data.tool, args: data.args, status: 'executing' });
@@ -537,8 +430,6 @@ export default function App() {
     playbackTimeRef.current = 0;
     agentPlaybackTimeRef.current = 0;
     agentPlaybackEndTimeRef.current = 0;
-    agentWaitingForQuestionRef.current = false;
-    agentInterruptModeRef.current = false;
     setSpeakerRole('caller');
     speakerRoleRef.current = 'caller';
 
@@ -549,7 +440,10 @@ export default function App() {
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
-    ws.onopen = () => console.log('[Client] WebSocket 연결됨');
+    ws.onopen = () => {
+      console.log('[Client] WebSocket 연결됨');
+      ws.send(JSON.stringify({ type: 'settings.update', agentSettings: agentSettingsRef.current }));
+    };
     ws.onmessage = handleServerMessage;
     ws.onerror = (err) => {
       console.error('[Client] WebSocket 오류:', err);
@@ -674,8 +568,9 @@ export default function App() {
   }, []);
 
   const invokeAgent = useCallback(() => {
-    lastTriggerTimeRef.current = Date.now();
-    agentWaitingForQuestionRef.current = true;
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'agent.listen' }));
+    }
   }, []);
 
   const getAgentSettings = useCallback(() => agentSettingsRef.current, []);
@@ -683,6 +578,9 @@ export default function App() {
   const handleSaveSettings = useCallback((newSettings) => {
     setAgentSettings(newSettings);
     agentSettingsRef.current = newSettings;
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'settings.update', agentSettings: newSettings }));
+    }
   }, []);
 
   // 자동응답 통화 중 전화 이어받기 — AI 종료
