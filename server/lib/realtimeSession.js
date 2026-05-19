@@ -160,9 +160,11 @@ export function handleRealtimeConnection(clientWs, req) {
       // 1. Initial setup when session is created
       if (event.type === 'session.created') {
         console.log('[A-Machine] OpenAI 세션 생성됨');
-        
-        // Configure the session
         const openAiVoice = currentVoice.startsWith('el_') ? 'alloy' : currentVoice;
+        if (openAiVoice !== currentVoice) {
+          console.log(`[A-Machine] 음성 변조 필터 활성화: ${currentVoice} -> OpenAI 베이스라인: ${openAiVoice}`);
+        }
+
         safeSend(openaiWs, {
           type: 'session.update',
           session: buildSessionConfig(openAiVoice)
