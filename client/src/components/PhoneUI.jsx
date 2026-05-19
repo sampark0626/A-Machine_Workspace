@@ -1,5 +1,18 @@
 import { useState, useRef, useEffect } from 'react';
 
+const VOICES = [
+  { id: 'marin',   name: 'Marin',   desc: '부드럽고 친근한 여성' },
+  { id: 'sage',    name: 'Sage',    desc: '차분하고 명확한 여성' },
+  { id: 'shimmer', name: 'Shimmer', desc: '밝고 생동감 있는 여성' },
+  { id: 'ash',     name: 'Ash',     desc: '중성적이고 안정적' },
+  { id: 'coral',   name: 'Coral',   desc: '따뜻하고 표현력 있는 여성' },
+  { id: 'alloy',   name: 'Alloy',   desc: '균형 잡힌 중성 목소리' },
+  { id: 'echo',    name: 'Echo',    desc: '또렷하고 전문적인 남성' },
+  { id: 'ballad',  name: 'Ballad',  desc: '감성적이고 부드러운 남성' },
+  { id: 'verse',   name: 'Verse',   desc: '역동적이고 표현력 풍부' },
+  { id: 'cedar',   name: 'Cedar',   desc: '깊고 신뢰감 있는 남성' },
+];
+
 export default function PhoneUI({
   callState,
   messages,
@@ -11,12 +24,21 @@ export default function PhoneUI({
   onEndCall,
   formatTime,
   summary,
-  onResetCallState
+  onResetCallState,
+  callMode = 'answering',
+  agentStatus = 'passive',
+  onInvokeAgent,
+  onOpenSettings,
+  speakerRole = 'caller',
+  onToggleSpeaker,
+  currentVoice = 'marin',
+  onChangeVoice,
 }) {
   const [activeTab, setActiveTab] = useState('recents');
   const [keypadInput, setKeypadInput] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [showCallKeypad, setShowCallKeypad] = useState(false);
+  const [showVoicePicker, setShowVoicePicker] = useState(false);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -82,7 +104,15 @@ export default function PhoneUI({
             {activeTab === 'recents' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
                 <div className="recents-header">
-                  <div className="recents-title">최근 통화</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="recents-title">최근 통화</div>
+                    <button className="settings-icon-btn" onClick={onOpenSettings} title="에이전트 설정">
+                      ⚙️
+                    </button>
+                  </div>
+                  <div className={`mode-badge ${callMode === 'assist' ? 'assist' : 'answering'}`}>
+                    {callMode === 'assist' ? '🎧 통화 어시스트 모드' : '📞 자동 응답 모드'}
+                  </div>
                   <div className="recents-tabs">
                     <button className="recents-tab-btn active">전체</button>
                     <button className="recents-tab-btn">부재중</button>
@@ -257,11 +287,40 @@ export default function PhoneUI({
               </div>
 
               <div className="caller-detail">
-                <div className="caller-detail-name">A-Machine 통화 비서</div>
+                <div className="caller-detail-name">
+                  {callMode === 'assist' ? '🎧 통화 어시스트' : 'A-Machine 통화 비서'}
+                </div>
                 <div className="caller-detail-timer">
-                  {isModelSpeaking ? '🎙️ A-Machine 답변 중' : '🎧 대기 중'} · {formatTime(elapsed)}
+                  {callMode === 'assist'
+                    ? agentStatus === 'active' ? '🟢 에이전트 응답 중' : '🎙️ 통화 녹취 중'
+                    : isModelSpeaking ? '🎙️ AI 답변 중' : '🎧 대기 중'
+                  } · {formatTime(elapsed)}
                 </div>
               </div>
+
+              {/* 어시스트 모드: 역할 전환 버튼 + 에이전트 상태 배너 */}
+              {callMode === 'assist' && (
+                <>
+                  <button
+                    className={`speaker-role-toggle ${speakerRole}`}
+                    onClick={onToggleSpeaker}
+                    title="발신자 / 수신자 전환"
+                  >
+                    <span className="role-icon">
+                      {speakerRole === 'caller' ? '📞' : '📱'}
+                    </span>
+                    <span className="role-label">
+                      {speakerRole === 'caller' ? '발신자로 말하는 중' : '수신자로 말하는 중'}
+                    </span>
+                    <span className="role-switch-hint">탭하여 전환 →</span>
+                  </button>
+                  <div className={`assist-status-banner ${agentStatus === 'active' ? 'active' : ''}`}>
+                    {agentStatus === 'active'
+                      ? '🟢 에이전트 응답 중 — 이어폰으로 청취하세요'
+                      : '⚪ 에이전트 대기 중 — "에이전트"라고 말하거나 버튼을 눌러 호출'}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Glassmorphism Chat Bubble Card */}
@@ -277,7 +336,11 @@ export default function PhoneUI({
                   <div key={i} className={`glass-bubble-wrapper ${msg.role}`}>
                     <div className={`glass-bubble ${msg.role}`}>
                       <span className="bubble-tag-speaker">
-                        {msg.role === 'user' ? '👤 발신자' : '🤖 A-Machine'}
+                        {msg.role === 'caller' ? '📞 발신자'
+                          : msg.role === 'receiver' ? '📱 수신자'
+                          : msg.role === 'agent' ? '🤖 에이전트 (귓속말)'
+                          : msg.role === 'user' ? '👤 나'
+                          : '🤖 A-Machine'}
                       </span>
                       {msg.text}
                     </div>
@@ -313,37 +376,38 @@ export default function PhoneUI({
               </div>
             </div>
 
-            {/* 4-Button Controls Panel */}
+            {/* Controls Panel */}
             <div className="active-control-panel">
-              <button 
-                className={`ctrl-btn ${isMuted ? 'active' : ''}`} 
+              <button
+                className={`ctrl-btn ${isMuted ? 'active' : ''}`}
                 onClick={() => setIsMuted(!isMuted)}
                 title="음소거"
               >
                 <span className="ctrl-btn-icon">{isMuted ? '🔇' : '🎙️'}</span>
                 <span>{isMuted ? '소리 켬' : '음소거'}</span>
               </button>
-              
-              <button 
-                className={`ctrl-btn ${showCallKeypad ? 'active' : ''}`}
-                onClick={() => setShowCallKeypad(!showCallKeypad)}
-                title="키패드"
+
+              <button
+                className={`ctrl-btn agent-invoke-btn ${agentStatus === 'active' ? 'active' : ''}`}
+                onClick={onInvokeAgent}
+                title="에이전트 호출"
+                disabled={agentStatus === 'active'}
               >
-                <span className="ctrl-btn-icon">🔢</span>
-                <span>키패드</span>
+                <span className="ctrl-btn-icon">🤖</span>
+                <span>에이전트</span>
               </button>
 
-              <button 
-                className={`ctrl-btn ${echoGuard ? 'active' : ''}`}
-                onClick={() => onToggleEchoGuard(!echoGuard)}
-                title="스피커폰 (에코 가드)"
+              <button
+                className={`ctrl-btn ${showVoicePicker ? 'active' : ''}`}
+                onClick={() => setShowVoicePicker(v => !v)}
+                title="목소리 선택"
               >
-                <span className="ctrl-btn-icon">{echoGuard ? '🔊' : '🔈'}</span>
-                <span>스피커폰</span>
+                <span className="ctrl-btn-icon">🎵</span>
+                <span>{VOICES.find(v => v.id === currentVoice)?.name || '목소리'}</span>
               </button>
 
-              <button 
-                className="ctrl-btn end-call" 
+              <button
+                className="ctrl-btn end-call"
                 onClick={onEndCall}
                 title="통화 종료"
               >
@@ -351,6 +415,29 @@ export default function PhoneUI({
                 <span>종료</span>
               </button>
             </div>
+
+            {/* Voice Picker Sheet */}
+            {showVoicePicker && (
+              <div className="voice-picker-sheet">
+                <div className="voice-picker-header">
+                  <span>목소리 선택</span>
+                  <button className="voice-picker-close" onClick={() => setShowVoicePicker(false)}>✕</button>
+                </div>
+                <div className="voice-picker-list">
+                  {VOICES.map(v => (
+                    <button
+                      key={v.id}
+                      className={`voice-picker-item ${currentVoice === v.id ? 'active' : ''}`}
+                      onClick={() => { onChangeVoice(v.id); setShowVoicePicker(false); }}
+                    >
+                      <span className="voice-picker-name">{v.name}</span>
+                      <span className="voice-picker-desc">{v.desc}</span>
+                      {currentVoice === v.id && <span className="voice-picker-check">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Overlay Phone Keypad Drawer during call */}
             {showCallKeypad && (

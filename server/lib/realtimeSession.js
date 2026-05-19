@@ -3,6 +3,7 @@ import { WebSocket } from 'ws';
 import { checkCalendar, createCalendarEvent } from './calendarTools.js';
 import { generateSummary } from './summaryNotifier.js';
 import { ElevenLabsSTSStreamer } from './elevenLabsSTS.js';
+import { invokeAgent, classifyInterrupt, resumeAgent, invokeElevenLabsAgent } from './agentResponder.js';
 
 import dotenv from 'dotenv';
 import path from 'path';
@@ -22,6 +23,41 @@ const AUDIO_SAMPLE_RATE = 24000;
 // Known OpenAI voices list to identify ElevenLabs voices by exclusion
 const OPENAI_VOICES = new Set(['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar']);
 
+// ── Assist Mode System Prompt ──────────────────────────────────────────────
+function buildAssistInstructions(receiverName, assistContext) {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const kst = new Date(utc + 9 * 3600000);
+  const dateStr = `${kst.getFullYear()}-${String(kst.getMonth()+1).padStart(2,'0')}-${String(kst.getDate()).padStart(2,'0')}`;
+  const dayNames = ['일','월','화','수','목','금','토'];
+  const timeStr = `${String(kst.getHours()).padStart(2,'0')}:${String(kst.getMinutes()).padStart(2,'0')}`;
+
+  return `## 역할
+당신은 ${receiverName}님의 **친구** 역할을 맡은 AI입니다.
+자연스럽게 친구처럼 행동하며, ${receiverName}님과 실제 친구 사이의 통화처럼 대화하세요.
+
+## 대화 방식
+- 편하고 친근한 한국어 구어체 사용 (반말 또는 편한 말투)
+- 일상, 약속, 근황, 재미있는 이야기 등 다양한 주제로 자연스럽게 대화
+- 한 번에 1~2문장으로 짧고 자연스럽게 주고받기
+- 상대방(${receiverName})의 말에 재미있게 반응하고 대화를 이끌어가기
+${assistContext ? `\n## 대화 배경\n${assistContext}\n` : ''}
+## 현재 시간 (KST)
+- 날짜: ${dateStr} (${dayNames[kst.getDay()]}요일) / 시각: ${timeStr}`;
+}
+
+// ── Agent Instructions (OpenAI Realtime 에이전트 모드용) ──────────────────
+function buildAgentInstructions(assistContext) {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const kst = new Date(utc + 9 * 3600000);
+  const dateStr = `${kst.getFullYear()}-${String(kst.getMonth()+1).padStart(2,'0')}-${String(kst.getDate()).padStart(2,'0')}`;
+  const dayNames = ['일','월','화','수','목','금','토'];
+  const timeStr = `${String(kst.getHours()).padStart(2,'0')}:${String(kst.getMinutes()).padStart(2,'0')}`;
+  return `당신은 통화 중인 사용자 옆에서 즉시 답변해주는 AI 어시스턴트입니다. 질문에 직접 답하고 구체적인 추천·정보를 제공하세요. 마크다운 기호 절대 사용 금지. 2~4문장으로 간결하게. 자연스러운 한국어 구어체. 현재 시간(KST): ${dateStr}(${dayNames[kst.getDay()]}요일) ${timeStr}${assistContext ? ` 참고 정보: ${assistContext}` : ''}`;
+}
+
+// ── Answering Machine System Prompt ───────────────────────────────────────
 const SYSTEM_PROMPT = `## 역할
 당신은 ${RECEIVER_NAME}님을 대신해 전화를 받는 AI 엔서링머신 에이전트 "A-Machine"입니다.
 
@@ -130,8 +166,13 @@ export function handleRealtimeConnection(clientWs, req) {
   const transcript = [];
   const handledFunctionCalls = new Set();
   let currentVoice = DEFAULT_VOICE;
+  let lastAgentText = '';
+  let lastAgentSettings = {};
+  let agentRealtimeMode = false; // OpenAI Realtime을 에이전트 응답으로 사용 중
 
-  // Extract voice from query parameter if available
+  // Extract query parameters
+  let isAssistMode = false;
+  let assistContext = '';
   if (req && req.url) {
     try {
       const url = new URL(req.url, 'http://localhost');
@@ -140,6 +181,8 @@ export function handleRealtimeConnection(clientWs, req) {
         currentVoice = voiceParam;
         console.log(`[A-Machine] 클라이언트 요청 음성 사용: ${currentVoice}`);
       }
+      isAssistMode = url.searchParams.get('mode') === 'assist';
+      assistContext = url.searchParams.get('context') || '';
     } catch (e) {
       console.warn('[A-Machine] URL 파싱 실패, 기본값 사용:', e.message);
     }
@@ -156,6 +199,9 @@ export function handleRealtimeConnection(clientWs, req) {
     : false;
   const elevenLabsSTS = new ElevenLabsSTSStreamer(clientWs, initialElevenLabsVoiceId);
 
+  if (isAssistMode) {
+    console.log('[A-Machine] 통화 어시스트 모드로 시작');
+  }
 
   let sessionReady = false;
 
@@ -186,12 +232,13 @@ export function handleRealtimeConnection(clientWs, req) {
 
         safeSend(openaiWs, {
           type: 'session.update',
-          session: buildSessionConfig(openAiVoice)
+          session: isAssistMode
+            ? buildAssistSessionConfig(currentVoice, assistContext)
+            : buildSessionConfig(openAiVoice)
         });
         return;
       }
 
-      // Start the greeting only after the server accepts the session settings.
       if (event.type === 'session.updated' && !sessionReady) {
         sessionReady = true;
         safeSend(clientWs, {
@@ -199,12 +246,13 @@ export function handleRealtimeConnection(clientWs, req) {
           model: REALTIME_MODEL,
           voice: currentVoice
         });
-        safeSend(openaiWs, {
-          type: 'response.create',
-          response: {
-            output_modalities: ['audio']
-          }
-        });
+        // 자동응답 모드만 AI가 먼저 인사말 시작 (어시스트 모드는 사용자가 직접 대화)
+        if (!isAssistMode) {
+          safeSend(openaiWs, {
+            type: 'response.create',
+            response: { output_modalities: ['audio'] }
+          });
+        }
       }
 
       // Log OpenAI error events
@@ -215,6 +263,41 @@ export function handleRealtimeConnection(clientWs, req) {
           message: event.error?.message || 'OpenAI Realtime 오류가 발생했습니다.',
           error: event.error
         });
+      }
+
+      // ── 에이전트 Realtime 모드: 응답 이벤트를 agent.* 메시지로 라우팅 ──
+      if (agentRealtimeMode) {
+        if (event.type === 'response.audio.delta' || event.type === 'response.output_audio.delta') {
+          safeSend(clientWs, { type: 'agent.audio', delta: event.delta });
+        } else if (event.type === 'response.audio_transcript.done' || event.type === 'response.output_audio_transcript.done') {
+          lastAgentText = event.transcript || '';
+          safeSend(clientWs, { type: 'agent.transcript', text: lastAgentText });
+        } else if (event.type === 'response.done') {
+          agentRealtimeMode = false;
+          // 어시스트 모드 instructions 원복
+          if (isAssistMode) {
+            safeSend(openaiWs, {
+              type: 'session.update',
+              session: { type: 'realtime', instructions: buildAssistInstructions(RECEIVER_NAME, assistContext) },
+            });
+          }
+          safeSend(clientWs, { type: 'agent.passive' });
+        } else if (event.type === 'error') {
+          agentRealtimeMode = false;
+          if (isAssistMode) {
+            safeSend(openaiWs, {
+              type: 'session.update',
+              session: { type: 'realtime', instructions: buildAssistInstructions(RECEIVER_NAME, assistContext) },
+            });
+          }
+          safeSend(clientWs, { type: 'agent.passive' });
+          safeSend(clientWs, event);
+        }
+        // input_audio_buffer.speech_started 등 공용 이벤트는 그대로 포워드
+        if (event.type === 'input_audio_buffer.speech_started' || event.type === 'input_audio_buffer.speech_stopped') {
+          safeSend(clientWs, event);
+        }
+        return;
       }
 
       // Handle function calls from the model
@@ -262,6 +345,92 @@ export function handleRealtimeConnection(clientWs, req) {
     try {
       const msg = JSON.parse(data.toString());
 
+      // Handle agent invoke (assist mode) — separate Agent AI via agentResponder
+      if (msg.type === 'agent.invoke') {
+        const reason = msg.reason || '에이전트 호출';
+        const s = msg.agentSettings || {};
+        safeSend(clientWs, { type: 'agent.active', reason });
+        console.log(`[A-Machine] 에이전트 호출됨 (${s.agentType || 'claude'}): ${reason}`);
+
+        if (s.agentType === 'openai-realtime') {
+          // OpenAI Realtime API로 에이전트 응답 생성 (기존 세션 활용)
+          agentRealtimeMode = true;
+          lastAgentSettings = s;
+          const question = reason && reason !== '에이전트 호출' ? reason : '통화 내용을 바탕으로 도움이 될 정보를 알려주세요';
+          const conversationText = transcript.length > 0
+            ? '\n\n[통화 맥락]\n' + transcript.map(t => `${t.role === 'caller' ? '발신자' : t.role === 'receiver' ? '수신자' : '사용자'}: ${t.text}`).join('\n')
+            : '';
+          // session.update로 instructions를 에이전트 모드로 전환 후 response.create
+          safeSend(openaiWs, {
+            type: 'session.update',
+            session: {
+              type: 'realtime',
+              instructions: buildAgentInstructions(assistContext) + conversationText + `\n\n지금 바로 이 질문에 답하세요: ${question}`,
+            },
+          });
+          safeSend(openaiWs, {
+            type: 'response.create',
+            response: { output_modalities: ['audio'] },
+          });
+        } else {
+          const run = s.agentType === 'elevenlabs'
+            ? invokeElevenLabsAgent({ transcript, reason, agentId: s.elevenLabsAgentId, clientWs })
+            : invokeAgent({ transcript, reason, assistContext, clientWs, llmModel: s.llmModel, ttsProvider: s.ttsProvider, ttsVoice: s.ttsVoice });
+
+          run.then(text => { lastAgentText = text; lastAgentSettings = s; })
+             .catch(err => {
+               console.error('[Agent] 오류:', err.message);
+               safeSend(clientWs, { type: 'agent.passive' });
+             });
+        }
+        return;
+      }
+
+      // Handle agent interrupt — classify and resume or answer new question
+      if (msg.type === 'agent.interrupt') {
+        const { userText } = msg;
+        const s = msg.agentSettings || lastAgentSettings || {};
+        console.log(`[A-Machine] 에이전트 인터럽트: "${userText}"`);
+        if (!lastAgentText) {
+          safeSend(clientWs, { type: 'agent.passive' });
+          return;
+        }
+        classifyInterrupt(userText, lastAgentText)
+          .then(action => {
+            safeSend(clientWs, { type: 'agent.active', reason: action === 'resume' ? '재개' : userText });
+            if (action === 'resume') {
+              console.log('[A-Machine] 에이전트 재개');
+              return resumeAgent({ text: lastAgentText, clientWs, ttsProvider: s.ttsProvider, ttsVoice: s.ttsVoice });
+            } else {
+              console.log(`[A-Machine] 새 질문: "${userText}"`);
+              if (s.agentType === 'openai-realtime') {
+                agentRealtimeMode = true;
+                safeSend(openaiWs, {
+                  type: 'session.update',
+                  session: {
+                    type: 'realtime',
+                    instructions: buildAgentInstructions(assistContext) + `\n\n지금 바로 이 질문에 답하세요: ${userText}`,
+                  },
+                });
+                safeSend(openaiWs, {
+                  type: 'response.create',
+                  response: { output_modalities: ['audio'] },
+                });
+                return;
+              }
+              const run2 = s.agentType === 'elevenlabs'
+                ? invokeElevenLabsAgent({ transcript, reason: userText, agentId: s.elevenLabsAgentId, clientWs })
+                : invokeAgent({ transcript, reason: userText, assistContext, clientWs, llmModel: s.llmModel, ttsProvider: s.ttsProvider, ttsVoice: s.ttsVoice });
+              return run2.then(text => { lastAgentText = text; });
+            }
+          })
+          .catch(err => {
+            console.error('[Agent] 인터럽트 처리 오류:', err.message);
+            safeSend(clientWs, { type: 'agent.passive' });
+          });
+        return;
+      }
+
       // Handle voice change request from client
       if (msg.type === 'voice.change') {
         currentVoice = msg.voice;
@@ -282,6 +451,7 @@ export function handleRealtimeConnection(clientWs, req) {
         safeSend(openaiWs, {
           type: 'session.update',
           session: {
+            type: 'realtime',
             audio: {
               output: {
                 voice: openAiSessionVoice
@@ -371,6 +541,36 @@ function getDynamicInstructions() {
    - **발신자가 대화 중 언급한 목적지, 만남 대상, 구체적인 장소나 키워드(예: '일지로 삼가', '을지로 3가', 'OO 부장님')가 있다면 이를 제목에 반드시 포함**하여 가시성 있게 구성하세요. (예: "일지로 삼가 저녁 식사" 또는 "을지로 3가 저녁 약속")
 3. **일정 등록 및 결과 안내**:
    - 일정을 등록한 후 발신자에게 안내할 때는 등록된 날짜와 요일, 시간을 명확히 복기해 주어 신뢰감을 주세요.`;
+}
+
+function buildAssistSessionConfig(voice, assistContext) {
+  return {
+    type: 'realtime',
+    model: REALTIME_MODEL,
+    output_modalities: ['audio'],
+    instructions: buildAssistInstructions(RECEIVER_NAME, assistContext),
+    tools: TOOLS,
+    tool_choice: 'auto',
+    audio: {
+      input: {
+        format: { type: 'audio/pcm', rate: AUDIO_SAMPLE_RATE },
+        transcription: {
+          model: 'gpt-realtime-whisper',
+          language: 'ko'
+        },
+        turn_detection: {
+          type: 'semantic_vad',
+          eagerness: 'auto',
+          create_response: false // 어시스트 모드: AI 자동 응답 없음, 트랜스크립션만
+        }
+      },
+      output: {
+        format: { type: 'audio/pcm', rate: AUDIO_SAMPLE_RATE },
+        voice,
+        speed: 1.0
+      }
+    }
+  };
 }
 
 function buildSessionConfig(voice) {
