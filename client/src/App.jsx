@@ -227,6 +227,22 @@ export default function App() {
     }
   }, [callState, playAudio]);
 
+  // Stop microphone
+  const stopMicrophone = useCallback(() => {
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+    if (captureContextRef.current) {
+      captureContextRef.current.close();
+      captureContextRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      mediaStreamRef.current = null;
+    }
+  }, []);
+
   // Start call
   const startCall = useCallback(async () => {
     setCallState('connecting');
@@ -302,22 +318,6 @@ export default function App() {
       console.error('[Client] 마이크 접근 실패:', err);
     }
   }, [handleServerMessage, currentVoice, stopMicrophone]);
-
-  // Stop microphone
-  const stopMicrophone = useCallback(() => {
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
-    }
-    if (captureContextRef.current) {
-      captureContextRef.current.close();
-      captureContextRef.current = null;
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(t => t.stop());
-      mediaStreamRef.current = null;
-    }
-  }, []);
 
   // End call
   const endCall = useCallback(() => {
