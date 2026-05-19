@@ -1,6 +1,12 @@
 // A-Machine v2 Server — Express + WebSocket relay to OpenAI Realtime API
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express from 'express';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 import http from 'http';
 import cors from 'cors';
 import { WebSocketServer, WebSocket } from 'ws';

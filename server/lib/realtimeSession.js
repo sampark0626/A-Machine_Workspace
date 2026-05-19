@@ -4,6 +4,14 @@ import { checkCalendar, createCalendarEvent } from './calendarTools.js';
 import { generateSummary } from './summaryNotifier.js';
 import { ElevenLabsSTSStreamer } from './elevenLabsSTS.js';
 
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2';
 const REALTIME_URL = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`;
