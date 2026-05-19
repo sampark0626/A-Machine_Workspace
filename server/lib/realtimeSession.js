@@ -178,10 +178,11 @@ export function handleRealtimeConnection(clientWs, req) {
       // 1. Initial setup when session is created
       if (event.type === 'session.created') {
         console.log('[A-Machine] OpenAI 세션 생성됨');
-        const openAiVoice = !OPENAI_VOICES.has(currentVoice) ? 'alloy' : currentVoice;
+        const openAiVoice = !OPENAI_VOICES.has(currentVoice) ? 'echo' : currentVoice;
         if (openAiVoice !== currentVoice) {
           console.log(`[A-Machine] 음성 변조 필터 활성화: ${currentVoice} -> OpenAI 베이스라인: ${openAiVoice}`);
         }
+
 
         safeSend(openaiWs, {
           type: 'session.update',
@@ -274,8 +275,9 @@ export function handleRealtimeConnection(clientWs, req) {
         }
 
         // Determine which voice to set on OpenAI Realtime session
-        // (For ElevenLabs STS, we use a neutral baseline voice like 'alloy')
-        const openAiSessionVoice = isElevenLabs ? 'alloy' : msg.voice;
+        // (For ElevenLabs STS, we use a resonant baseline voice like 'echo')
+        const openAiSessionVoice = isElevenLabs ? 'echo' : msg.voice;
+
 
         safeSend(openaiWs, {
           type: 'session.update',
