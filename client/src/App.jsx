@@ -548,6 +548,10 @@ export default function App() {
       sessionReadyRef.current = false;
       setCallState(prev => prev === 'ended' ? 'ended' : 'idle');
       if (wsRef.current === ws) wsRef.current = null;
+      // 통화 중 모드 전환이 있었을 경우 저장된 설정으로 원복
+      const saved = loadSettings();
+      setAgentSettings(saved);
+      agentSettingsRef.current = saved;
     };
 
     // Start microphone capture
@@ -641,6 +645,11 @@ export default function App() {
     setSummary(null);
     setElapsed(0);
     setAgentStatus('passive');
+    // 통화 중 모드 전환(이어받기 + 어시스트)으로 변경된 callMode를
+    // 저장된 설정으로 원복하여 다음 통화가 올바른 모드로 시작되게 한다
+    const saved = loadSettings();
+    setAgentSettings(saved);
+    agentSettingsRef.current = saved;
   }, []);
 
   const toggleSpeakerRole = useCallback(() => {
