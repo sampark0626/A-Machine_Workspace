@@ -33,12 +33,16 @@ export default function PhoneUI({
   onToggleSpeaker,
   currentVoice = 'marin',
   onChangeVoice,
+  onTakeover,
+  onTakeoverAssist,
+  takeoverMode = 'assist',
 }) {
   const [activeTab, setActiveTab] = useState('recents');
   const [keypadInput, setKeypadInput] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [showCallKeypad, setShowCallKeypad] = useState(false);
   const [showVoicePicker, setShowVoicePicker] = useState(false);
+  const [showTakeoverSheet, setShowTakeoverSheet] = useState(false);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -387,15 +391,26 @@ export default function PhoneUI({
                 <span>{isMuted ? '소리 켬' : '음소거'}</span>
               </button>
 
-              <button
-                className={`ctrl-btn agent-invoke-btn ${agentStatus === 'active' ? 'active' : ''}`}
-                onClick={onInvokeAgent}
-                title="에이전트 호출"
-                disabled={agentStatus === 'active'}
-              >
-                <span className="ctrl-btn-icon">🤖</span>
-                <span>에이전트</span>
-              </button>
+              {callMode === 'answering' ? (
+                <button
+                  className="ctrl-btn takeover-btn"
+                  onClick={() => setShowTakeoverSheet(true)}
+                  title="전화 받기"
+                >
+                  <span className="ctrl-btn-icon">📱</span>
+                  <span>전화 받기</span>
+                </button>
+              ) : (
+                <button
+                  className={`ctrl-btn agent-invoke-btn ${agentStatus === 'active' ? 'active' : ''}`}
+                  onClick={onInvokeAgent}
+                  title="에이전트 호출"
+                  disabled={agentStatus === 'active'}
+                >
+                  <span className="ctrl-btn-icon">🤖</span>
+                  <span>에이전트</span>
+                </button>
+              )}
 
               <button
                 className={`ctrl-btn ${showVoicePicker ? 'active' : ''}`}
@@ -435,6 +450,34 @@ export default function PhoneUI({
                       {currentVoice === v.id && <span className="voice-picker-check">✓</span>}
                     </button>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Takeover Sheet */}
+            {showTakeoverSheet && (
+              <div className="voice-picker-sheet">
+                <div className="voice-picker-header">
+                  <span>📱 전화를 이어받겠습니까?</span>
+                  <button className="voice-picker-close" onClick={() => setShowTakeoverSheet(false)}>✕</button>
+                </div>
+                <div className="voice-picker-list">
+                  <button
+                    className={`voice-picker-item ${takeoverMode === 'handoff' ? 'active' : ''}`}
+                    onClick={() => { setShowTakeoverSheet(false); onTakeover && onTakeover(); }}
+                  >
+                    <span className="voice-picker-name">📵 전화만 이어받기</span>
+                    <span className="voice-picker-desc">AI가 종료되고 직접 통화합니다</span>
+                    {takeoverMode === 'handoff' && <span className="voice-picker-check">✓</span>}
+                  </button>
+                  <button
+                    className={`voice-picker-item ${takeoverMode === 'assist' ? 'active' : ''}`}
+                    onClick={() => { setShowTakeoverSheet(false); onTakeoverAssist && onTakeoverAssist(); }}
+                  >
+                    <span className="voice-picker-name">🎧 이어받기 + 통화 어시스트</span>
+                    <span className="voice-picker-desc">AI가 어시스트 모드로 전환되어 통화를 도와줍니다</span>
+                    {takeoverMode === 'assist' && <span className="voice-picker-check">✓</span>}
+                  </button>
                 </div>
               </div>
             )}

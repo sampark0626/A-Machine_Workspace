@@ -1738,6 +1738,22 @@ body {
 .model-chip-name { font-size: 12px; font-weight: 600; }
 .model-chip-desc { font-size: 10px; opacity: 0.6; }
 
+.voice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.ctrl-btn.takeover-btn {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+.ctrl-btn.takeover-btn:hover {
+  background: rgba(16, 185, 129, 0.25);
+}
+
 .settings-label {
   display: block;
   font-size: 12px;

@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import './index.css';
 import PhoneUI from './components/PhoneUI';
-import VoiceSelector from './components/VoiceSelector';
 import SmsNotification from './components/SmsNotification';
 import AgentSettings, { loadSettings } from './components/AgentSettings';
 
@@ -453,6 +452,16 @@ export default function App() {
           setCurrentVoice(data.voice);
           break;
 
+        case 'mode.switched':
+          if (data.mode === 'assist') {
+            setAgentSettings(prev => {
+              const updated = { ...prev, callMode: 'assist' };
+              agentSettingsRef.current = updated;
+              return updated;
+            });
+          }
+          break;
+
         case 'call.summary':
           setSummary(data);
           setCallState('ended');
@@ -648,6 +657,23 @@ export default function App() {
     agentSettingsRef.current = newSettings;
   }, []);
 
+  // 자동응답 통화 중 전화 이어받기 — AI 종료
+  const handleTakeover = useCallback(() => {
+    endCall();
+  }, [endCall]);
+
+  // 자동응답 통화 중 전화 이어받기 + 어시스트 모드 전환
+  const handleTakeoverAssist = useCallback(() => {
+    setAgentSettings(prev => {
+      const updated = { ...prev, callMode: 'assist' };
+      agentSettingsRef.current = updated;
+      return updated;
+    });
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'mode.switch', mode: 'assist' }));
+    }
+  }, []);
+
   const formatTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   return (
@@ -672,13 +698,10 @@ export default function App() {
         onToggleSpeaker={toggleSpeakerRole}
         currentVoice={currentVoice}
         onChangeVoice={changeVoice}
+        onTakeover={handleTakeover}
+        onTakeoverAssist={handleTakeoverAssist}
+        takeoverMode={agentSettings.takeoverMode}
       />
-      {callState === 'idle' && (
-        <VoiceSelector
-          currentVoice={currentVoice}
-          onChangeVoice={changeVoice}
-        />
-      )}
 
       {smsVisible && summary && (
         <SmsNotification
@@ -691,6 +714,8 @@ export default function App() {
         <AgentSettings
           onClose={() => setShowSettings(false)}
           onSave={handleSaveSettings}
+          currentVoice={currentVoice}
+          onChangeVoice={changeVoice}
         />
       )}
     </div>

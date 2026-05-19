@@ -2,12 +2,13 @@ import { useState } from 'react';
 
 const DEFAULT_SETTINGS = {
   callMode: 'answering',
-  agentType: 'claude',
+  agentType: 'openai-realtime',
   llmModel: 'claude-haiku-4-5-20251001',
   ttsProvider: 'openai',
   ttsVoice: 'nova',
   elevenLabsAgentId: '',
   voiceKeyword: true,
+  takeoverMode: 'assist',
   autoTriggers: {
     onDateTime: true,
     onPrice: false,
@@ -26,24 +27,26 @@ export function loadSettings() {
   }
 }
 
-const LLM_MODELS = [
-  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5',  desc: '빠름 · 저비용' },
-  { value: 'claude-sonnet-4-6',         label: 'Claude Sonnet 4.6', desc: '균형잡힌 성능' },
-  { value: 'claude-opus-4-7',           label: 'Claude Opus 4.7',   desc: '최고 성능' },
-  { value: 'gpt-4o-mini',               label: 'GPT-4o mini',       desc: '빠름 · 저비용' },
-  { value: 'gpt-4o',                    label: 'GPT-4o',            desc: '고성능' },
+const VOICES = [
+  { id: 'marin',   name: 'Marin',   desc: '부드럽고 친근한 여성' },
+  { id: 'sage',    name: 'Sage',    desc: '차분하고 명확한 여성' },
+  { id: 'shimmer', name: 'Shimmer', desc: '밝고 생동감 있는 여성' },
+  { id: 'ash',     name: 'Ash',     desc: '중성적이고 안정적' },
+  { id: 'coral',   name: 'Coral',   desc: '따뜻하고 표현력 있는 여성' },
+  { id: 'alloy',   name: 'Alloy',   desc: '균형 잡힌 중성 목소리' },
+  { id: 'echo',    name: 'Echo',    desc: '또렷하고 전문적인 남성' },
+  { id: 'ballad',  name: 'Ballad',  desc: '감성적이고 부드러운 남성' },
+  { id: 'verse',   name: 'Verse',   desc: '역동적이고 표현력 풍부' },
+  { id: 'cedar',   name: 'Cedar',   desc: '깊고 신뢰감 있는 남성' },
 ];
 
-const OPENAI_VOICES = [
-  { value: 'nova',    label: 'Nova',    desc: '여성 · 밝고 친근함' },
-  { value: 'alloy',   label: 'Alloy',   desc: '중성 · 자연스러움' },
-  { value: 'echo',    label: 'Echo',    desc: '남성 · 차분함' },
-  { value: 'fable',   label: 'Fable',   desc: '남성 · 따뜻함' },
-  { value: 'onyx',    label: 'Onyx',    desc: '남성 · 깊은 목소리' },
-  { value: 'shimmer', label: 'Shimmer', desc: '여성 · 부드러움' },
+const AUTO_TRIGGER_OPTIONS = [
+  { key: 'onDateTime', icon: '📅', label: '날짜/시간 언급 시', desc: '일정 관련 대화에서 자동 개입' },
+  { key: 'onPrice',    icon: '💰', label: '금액/가격 언급 시', desc: '금액이 나올 때 자동 개입' },
+  { key: 'onQuestion', icon: '❓', label: '질문 받을 때',      desc: '"어때요?", "가능한가요?" 등 감지 시' },
 ];
 
-export default function AgentSettings({ onClose, onSave }) {
+export default function AgentSettings({ onClose, onSave, currentVoice, onChangeVoice }) {
   const [settings, setSettings] = useState(loadSettings);
   const [newKeyword, setNewKeyword] = useState('');
 
@@ -67,16 +70,11 @@ export default function AgentSettings({ onClose, onSave }) {
   const removeKeyword = (i) =>
     setSettings(s => ({ ...s, customKeywords: s.customKeywords.filter((_, j) => j !== i) }));
 
-  const AUTO_TRIGGER_OPTIONS = [
-    { key: 'onDateTime', icon: '📅', label: '날짜/시간 언급 시', desc: '일정 관련 대화에서 자동 개입' },
-    { key: 'onPrice',    icon: '💰', label: '금액/가격 언급 시', desc: '금액이 나올 때 자동 개입' },
-    { key: 'onQuestion', icon: '❓', label: '질문 받을 때',      desc: '"어때요?", "가능한가요?" 등 감지 시' },
-  ];
-
-  const isClaudeGPT      = settings.agentType === 'claude';
-  const isOpenAIRealtime = settings.agentType === 'openai-realtime';
-  const isElevenLabs     = settings.agentType === 'elevenlabs';
-  const isOpenAITTS      = settings.ttsProvider !== 'elevenlabs';
+  const handleVoiceChange = (voiceId) => {
+    if (onChangeVoice) {
+      onChangeVoice({ id: voiceId, provider: 'openai' });
+    }
+  };
 
   return (
     <div className="settings-overlay" onClick={onClose}>
@@ -104,125 +102,54 @@ export default function AgentSettings({ onClose, onSave }) {
           </div>
         </div>
 
+        {/* ── 자동 응답 모드: 전화 받기 시 동작 ── */}
+        {settings.callMode === 'answering' && (
+          <div className="settings-section">
+            <div className="settings-section-title">전화를 받을 때 동작</div>
+            <div className="toggle-desc" style={{ marginBottom: 10 }}>
+              자동 응답 통화 중 전화 받기 버튼을 누를 때의 동작을 선택하세요.
+            </div>
+            <div className="mode-selector">
+              <button
+                className={`mode-btn ${settings.takeoverMode === 'handoff' ? 'active' : ''}`}
+                onClick={() => set('takeoverMode', 'handoff')}
+              >
+                <span className="mode-icon">📵</span>
+                <span className="mode-label">전화 이어받기</span>
+                <span className="mode-desc">AI 종료 후 직접 통화</span>
+              </button>
+              <button
+                className={`mode-btn ${settings.takeoverMode === 'assist' ? 'active' : ''}`}
+                onClick={() => set('takeoverMode', 'assist')}
+              >
+                <span className="mode-icon">🎧</span>
+                <span className="mode-label">이어받기 + 어시스트</span>
+                <span className="mode-desc">AI가 어시스트로 전환</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── 목소리 선택 ── */}
+        <div className="settings-section">
+          <div className="settings-section-title">목소리</div>
+          <div className="voice-grid">
+            {VOICES.map(v => (
+              <button
+                key={v.id}
+                className={`model-chip ${currentVoice === v.id ? 'active' : ''}`}
+                onClick={() => handleVoiceChange(v.id)}
+              >
+                <span className="model-chip-name">{v.name}</span>
+                <span className="model-chip-desc">{v.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── 통화 어시스트 설정 ── */}
         {settings.callMode === 'assist' && (
           <>
-            {/* ── AI 모델 설정 ── */}
-            <div className="settings-section">
-              <div className="settings-section-title">AI 모델</div>
-
-              {/* Agent 타입 */}
-              <div className="model-type-selector">
-                <button
-                  className={`model-type-btn ${settings.agentType === 'claude' ? 'active' : ''}`}
-                  onClick={() => set('agentType', 'claude')}
-                >
-                  <span className="model-type-icon">🧠</span>
-                  <span className="model-type-label">Claude / GPT</span>
-                </button>
-                <button
-                  className={`model-type-btn ${settings.agentType === 'openai-realtime' ? 'active' : ''}`}
-                  onClick={() => set('agentType', 'openai-realtime')}
-                >
-                  <span className="model-type-icon">⚡</span>
-                  <span className="model-type-label">OpenAI Realtime</span>
-                </button>
-                <button
-                  className={`model-type-btn ${settings.agentType === 'elevenlabs' ? 'active' : ''}`}
-                  onClick={() => set('agentType', 'elevenlabs')}
-                >
-                  <span className="model-type-icon">🎙️</span>
-                  <span className="model-type-label">ElevenLabs</span>
-                </button>
-              </div>
-
-              {isOpenAIRealtime && (
-                <div className="elevenlabs-voice-input" style={{ marginTop: 8 }}>
-                  <div className="toggle-desc" style={{ lineHeight: 1.6 }}>
-                    기존 OpenAI Realtime 세션을 그대로 활용합니다. 추가 API 비용 없이 낮은 지연시간으로 응답하며, 통화 목소리 설정을 그대로 사용합니다.
-                  </div>
-                </div>
-              )}
-
-              {isClaudeGPT && (
-                <>
-                  {/* LLM 모델 */}
-                  <div className="settings-subsection-title">언어 모델 (LLM)</div>
-                  <div className="model-grid">
-                    {LLM_MODELS.map(m => (
-                      <button
-                        key={m.value}
-                        className={`model-chip ${settings.llmModel === m.value ? 'active' : ''}`}
-                        onClick={() => set('llmModel', m.value)}
-                      >
-                        <span className="model-chip-name">{m.label}</span>
-                        <span className="model-chip-desc">{m.desc}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* TTS 제공자 */}
-                  <div className="settings-subsection-title">음성 합성 (TTS)</div>
-                  <div className="model-type-selector">
-                    <button
-                      className={`model-type-btn ${isOpenAITTS ? 'active' : ''}`}
-                      onClick={() => { set('ttsProvider', 'openai'); set('ttsVoice', 'nova'); }}
-                    >
-                      <span className="model-type-icon">🔊</span>
-                      <span className="model-type-label">OpenAI TTS</span>
-                    </button>
-                    <button
-                      className={`model-type-btn ${!isOpenAITTS ? 'active' : ''}`}
-                      onClick={() => { set('ttsProvider', 'elevenlabs'); set('ttsVoice', '21m00Tcm4TlvDq8ikWAM'); }}
-                    >
-                      <span className="model-type-icon">🎙️</span>
-                      <span className="model-type-label">ElevenLabs TTS</span>
-                    </button>
-                  </div>
-
-                  {isOpenAITTS && (
-                    <div className="model-grid">
-                      {OPENAI_VOICES.map(v => (
-                        <button
-                          key={v.value}
-                          className={`model-chip ${settings.ttsVoice === v.value ? 'active' : ''}`}
-                          onClick={() => set('ttsVoice', v.value)}
-                        >
-                          <span className="model-chip-name">{v.label}</span>
-                          <span className="model-chip-desc">{v.desc}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {!isOpenAITTS && (
-                    <div className="elevenlabs-voice-input">
-                      <label className="settings-label">Voice ID</label>
-                      <input
-                        className="settings-input"
-                        value={settings.ttsVoice}
-                        onChange={e => set('ttsVoice', e.target.value)}
-                        placeholder="ElevenLabs Voice ID (예: 21m00Tcm4TlvDq8ikWAM)"
-                      />
-                      <div className="toggle-desc">ElevenLabs 대시보드 → Voices에서 복사</div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {isElevenLabs && !isOpenAIRealtime && (
-                <div className="elevenlabs-voice-input">
-                  <label className="settings-label">Agent ID</label>
-                  <input
-                    className="settings-input"
-                    value={settings.elevenLabsAgentId}
-                    onChange={e => set('elevenLabsAgentId', e.target.value)}
-                    placeholder="ElevenLabs Agent ID"
-                  />
-                  <div className="toggle-desc">ElevenLabs 대시보드 → Conversational AI에서 복사</div>
-                </div>
-              )}
-            </div>
-
             {/* ── 호출 방식 ── */}
             <div className="settings-section">
               <div className="settings-section-title">호출 방식</div>

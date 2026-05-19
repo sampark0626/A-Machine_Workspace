@@ -345,6 +345,18 @@ export function handleRealtimeConnection(clientWs, req) {
     try {
       const msg = JSON.parse(data.toString());
 
+      // Handle mode switch: answering → assist
+      if (msg.type === 'mode.switch' && msg.mode === 'assist') {
+        isAssistMode = true;
+        console.log('[A-Machine] 통화 어시스트 모드로 전환');
+        safeSend(openaiWs, {
+          type: 'session.update',
+          session: buildAssistSessionConfig(currentVoice, assistContext)
+        });
+        safeSend(clientWs, { type: 'mode.switched', mode: 'assist' });
+        return;
+      }
+
       // Handle agent invoke (assist mode) — separate Agent AI via agentResponder
       if (msg.type === 'agent.invoke') {
         const reason = msg.reason || '에이전트 호출';
