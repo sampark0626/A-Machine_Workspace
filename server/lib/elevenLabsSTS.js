@@ -5,6 +5,10 @@ export class ElevenLabsSTSStreamer {
     this.clientWs = clientWs;
     this.apiKey = process.env.ELEVENLABS_API_KEY;
     
+    console.log('[ElevenLabs Debug] apiKey:', this.apiKey ? `Loaded (length: ${this.apiKey.length})` : 'undefined');
+    console.log('[ElevenLabs Debug] initialVoiceId:', initialVoiceId);
+    console.log('[ElevenLabs Debug] process.env.ELEVENLABS_VOICE_ID:', process.env.ELEVENLABS_VOICE_ID);
+    
     if (initialVoiceId === false) {
       this.voiceId = null;
       this.isConfigured = false;
@@ -13,6 +17,9 @@ export class ElevenLabsSTSStreamer {
       this.isConfigured = !!(this.apiKey && this.voiceId);
     }
     
+    console.log('[ElevenLabs Debug] final voiceId:', this.voiceId);
+    console.log('[ElevenLabs Debug] isConfigured:', this.isConfigured);
+
     this.elevenWs = null;
     this.isConnected = false;
     this.audioBuffer = []; // Buffer for chunks received before connection is open
