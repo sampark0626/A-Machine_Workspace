@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Icon from './Icon';
 
 const DEFAULT_SETTINGS = {
   callMode: 'answering',
@@ -49,10 +50,10 @@ export const VOICES = [
 ];
 
 const AUTO_TRIGGER_OPTIONS = [
-  { key: 'onDateTime', icon: '📅', label: '날짜/시간 언급 시',  desc: '일정 관련 대화에서 자동 개입' },
-  { key: 'onPrice',    icon: '💰', label: '금액/가격 언급 시',  desc: '금액이 나올 때 자동 개입' },
-  { key: 'onQuestion', icon: '❓', label: '질문 받을 때',       desc: '"어때요?", "가능한가요?" 등 감지 시' },
-  { key: 'onAccount',  icon: '🏦', label: '계좌/금융정보 언급 시', desc: '계좌번호·인증번호 등 언급 시 보이스피싱 경고' },
+  { key: 'onDateTime', iconName: 'calendar',        label: '날짜/시간 언급 시',       desc: '일정 관련 대화에서 자동 개입' },
+  { key: 'onPrice',    iconName: 'coins',            label: '금액/가격 언급 시',       desc: '금액이 나올 때 자동 개입' },
+  { key: 'onQuestion', iconName: 'circle-question', label: '질문 받을 때',            desc: '"어때요?", "가능한가요?" 등 감지 시' },
+  { key: 'onAccount',  iconName: 'company',          label: '계좌/금융정보 언급 시',   desc: '계좌번호·인증번호 등 언급 시 보이스피싱 경고' },
 ];
 
 export default function AgentSettings({ onClose, onSave, currentVoice, onChangeVoice }) {
@@ -89,9 +90,9 @@ export default function AgentSettings({ onClose, onSave, currentVoice, onChangeV
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel" onClick={e => e.stopPropagation()}>
         <div className="settings-header">
-          <span className="settings-header-icon">⚙️</span>
+          <span className="settings-header-icon"><Icon name="setting" size={20} /></span>
           <h2 className="settings-title">에이전트 설정</h2>
-          <button className="settings-close-btn" onClick={onClose}>✕</button>
+          <button className="settings-close-btn" onClick={onClose}><Icon name="close" size={12} /></button>
         </div>
 
         {/* ── 통화 모드 ── */}
@@ -99,12 +100,12 @@ export default function AgentSettings({ onClose, onSave, currentVoice, onChangeV
           <div className="settings-section-title">통화 모드</div>
           <div className="mode-selector">
             <button className={`mode-btn ${settings.callMode === 'answering' ? 'active' : ''}`} onClick={() => setMode('answering')}>
-              <span className="mode-icon">📞</span>
+              <span className="mode-icon"><Icon name="phone" size={22} /></span>
               <span className="mode-label">자동 응답</span>
               <span className="mode-desc">부재 중 AI가 대신 통화</span>
             </button>
             <button className={`mode-btn ${settings.callMode === 'assist' ? 'active' : ''}`} onClick={() => setMode('assist')}>
-              <span className="mode-icon">🎧</span>
+              <span className="mode-icon"><Icon name="sparkle" size={22} /></span>
               <span className="mode-label">통화 어시스트</span>
               <span className="mode-desc">통화 중 AI 보조 활성화</span>
             </button>
@@ -123,7 +124,7 @@ export default function AgentSettings({ onClose, onSave, currentVoice, onChangeV
                 className={`mode-btn ${settings.takeoverMode === 'handoff' ? 'active' : ''}`}
                 onClick={() => set('takeoverMode', 'handoff')}
               >
-                <span className="mode-icon">📵</span>
+                <span className="mode-icon"><Icon name="phone" size={22} /></span>
                 <span className="mode-label">전화 이어받기</span>
                 <span className="mode-desc">AI 종료 후 직접 통화</span>
               </button>
@@ -131,7 +132,7 @@ export default function AgentSettings({ onClose, onSave, currentVoice, onChangeV
                 className={`mode-btn ${settings.takeoverMode === 'assist' ? 'active' : ''}`}
                 onClick={() => set('takeoverMode', 'assist')}
               >
-                <span className="mode-icon">🎧</span>
+                <span className="mode-icon"><Icon name="sparkle" size={22} /></span>
                 <span className="mode-label">이어받기 + 어시스트</span>
                 <span className="mode-desc">AI가 어시스트로 전환</span>
               </button>
@@ -177,10 +178,10 @@ export default function AgentSettings({ onClose, onSave, currentVoice, onChangeV
             {/* ── 자동 개입 조건 ── */}
             <div className="settings-section">
               <div className="settings-section-title">자동 개입 조건</div>
-              {AUTO_TRIGGER_OPTIONS.map(({ key, icon, label, desc }) => (
+              {AUTO_TRIGGER_OPTIONS.map(({ key, iconName, label, desc }) => (
                 <label key={key} className="settings-toggle-row">
                   <div>
-                    <div className="toggle-label">{icon} {label}</div>
+                    <div className="toggle-label"><><Icon name={iconName} size={16} /> {label}</></div>
                     <div className="toggle-desc">{desc}</div>
                   </div>
                   <div

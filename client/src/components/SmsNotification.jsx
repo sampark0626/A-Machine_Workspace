@@ -1,3 +1,5 @@
+import Icon from './Icon';
+
 export default function SmsNotification({ summary, onClose }) {
   const { receiver, timestamp } = summary;
   const data = summary.summary || {};
@@ -26,7 +28,7 @@ export default function SmsNotification({ summary, onClose }) {
             {/* SMS Body */}
             <div className="sms-body">
               <div className="sms-bubble">
-                <div className="sms-label">📱 부재중 통화 요약</div>
+                <div className="sms-label">부재중 통화 요약</div>
                 <div className="sms-content">
                   <p style={{ fontWeight: 600, marginBottom: 12 }}>
                     {receiver?.name || '김부장'}님, 부재중 전화가 있었습니다.
@@ -51,7 +53,7 @@ export default function SmsNotification({ summary, onClose }) {
                     <span className="field-value">{data.duration || '약 1분'}</span>
                   </div>
 
-                  <p style={{ marginTop: 12, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 12 }}>
+                  <p style={{ marginTop: 12, borderTop: '1px solid var(--color-line-normal)', paddingTop: 12 }}>
                     {data.text || '통화 내용을 요약할 수 없습니다.'}
                   </p>
 
@@ -71,14 +73,16 @@ export default function SmsNotification({ summary, onClose }) {
                       <span className="field-label" style={{ display: 'block', marginBottom: 6 }}>등록된 일정</span>
                       {data.scheduledEvents.map((evt, i) => (
                         <div key={i} className="field-value" style={{ fontSize: 12, marginBottom: 4 }}>
-                          📅 {evt.title} — {evt.datetime}
+                          <Icon name="calendar" size={13} style={{ marginRight: 3, verticalAlign: 'middle' }} />{evt.title} — {evt.datetime}
                         </div>
                       ))}
                     </div>
                   )}
 
                   <div className={`sms-urgency ${data.urgency === 'urgent' ? 'urgent' : 'normal'}`}>
-                    {data.urgency === 'urgent' ? '🔴 긴급' : '🔵 일반'}
+                    {data.urgency === 'urgent'
+                      ? <><Icon name="triangle-exclamation-fill" size={12} style={{ marginRight: 3 }} />긴급</>
+                      : <><Icon name="circle-info" size={12} style={{ marginRight: 3 }} />일반</>}
                   </div>
                 </div>
               </div>
