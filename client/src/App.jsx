@@ -44,7 +44,7 @@ function pcm16ToBase64(float32) {
 export default function App() {
   const [callState, setCallState] = useState('idle'); // idle | connecting | active | ended
   const [messages, setMessages] = useState([]);
-  const [currentVoice, setCurrentVoice] = useState('marin');
+  const [currentVoice, setCurrentVoice] = useState('el_sumin');
   const [summary, setSummary] = useState(null);
   const [smsVisible, setSmsVisible] = useState(false);
   const [toolActivity, setToolActivity] = useState(null);
@@ -335,11 +335,16 @@ export default function App() {
   }, [stopMicrophone]);
 
   // Change voice
-  const changeVoice = useCallback((voice) => {
+  const changeVoice = useCallback((voiceObj) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'voice.change', voice }));
+      wsRef.current.send(JSON.stringify({
+        type: 'voice.change',
+        voice: voiceObj.id,
+        provider: voiceObj.provider,
+        elevenLabsVoiceId: voiceObj.voiceId
+      }));
     }
-    setCurrentVoice(voice);
+    setCurrentVoice(voiceObj.id);
   }, []);
 
   const handleResetCallState = useCallback(() => {

@@ -2,6 +2,7 @@
 import { WebSocket } from 'ws';
 import { checkCalendar, createCalendarEvent } from './calendarTools.js';
 import { generateSummary } from './summaryNotifier.js';
+import { ElevenLabsSTSStreamer } from './elevenLabsSTS.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-2';
@@ -133,6 +134,11 @@ export function handleRealtimeConnection(clientWs, req) {
     }
   }
 
+  // Determine initial ElevenLabs settings based on voice query parameter
+  const isElevenLabs = currentVoice.startsWith('el_');
+  const initialElevenLabsVoiceId = isElevenLabs ? process.env.ELEVENLABS_VOICE_ID : false;
+  const elevenLabsSTS = new ElevenLabsSTSStreamer(clientWs, initialElevenLabsVoiceId);
+
   let sessionReady = false;
 
   // Connect to OpenAI Realtime API
@@ -156,9 +162,10 @@ export function handleRealtimeConnection(clientWs, req) {
         console.log('[A-Machine] OpenAI 세션 생성됨');
         
         // Configure the session
+        const openAiVoice = currentVoice.startsWith('el_') ? 'alloy' : currentVoice;
         safeSend(openaiWs, {
           type: 'session.update',
-          session: buildSessionConfig(currentVoice)
+          session: buildSessionConfig(openAiVoice)
         });
         return;
       }
@@ -206,6 +213,14 @@ export function handleRealtimeConnection(clientWs, req) {
         transcript.push({ role: 'user', text: event.transcript });
       }
 
+      // Intercept OpenAI audio output and relay to ElevenLabs STS (if configured)
+      if (event.type === 'response.output_audio.delta') {
+        if (elevenLabsSTS.isConfigured) {
+          elevenLabsSTS.relayAudioFromOpenAI(event.delta);
+          return;
+        }
+      }
+
       // Forward to client
       safeSend(clientWs, event);
     } catch (err) {
@@ -221,12 +236,25 @@ export function handleRealtimeConnection(clientWs, req) {
       // Handle voice change request from client
       if (msg.type === 'voice.change') {
         currentVoice = msg.voice;
+        const isElevenLabs = msg.provider === 'elevenlabs';
+
+        if (isElevenLabs) {
+          elevenLabsSTS.updateVoice(msg.elevenLabsVoiceId);
+        } else {
+          elevenLabsSTS.isConfigured = false;
+          elevenLabsSTS.close();
+        }
+
+        // Determine which voice to set on OpenAI Realtime session
+        // (For ElevenLabs STS, we use a neutral baseline voice like 'alloy')
+        const openAiSessionVoice = isElevenLabs ? 'alloy' : msg.voice;
+
         safeSend(openaiWs, {
           type: 'session.update',
           session: {
             audio: {
               output: {
-                voice: msg.voice
+                voice: openAiSessionVoice
               }
             }
           }
@@ -235,7 +263,7 @@ export function handleRealtimeConnection(clientWs, req) {
           type: 'voice.changed',
           voice: msg.voice
         });
-        console.log(`[A-Machine] 음성 변경: ${msg.voice}`);
+        console.log(`[A-Machine] 음성 변경: ${msg.voice} (Provider: ${msg.provider || 'openai'}, OpenAI baseline: ${openAiSessionVoice})`);
         return;
       }
 
@@ -260,6 +288,7 @@ export function handleRealtimeConnection(clientWs, req) {
   // Cleanup
   clientWs.on('close', () => {
     console.log('[A-Machine] 클라이언트 연결 종료');
+    elevenLabsSTS.close();
     if (openaiWs.readyState === WebSocket.OPEN) openaiWs.close();
   });
 

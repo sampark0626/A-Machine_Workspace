@@ -1,14 +1,17 @@
 const VOICES = [
-  { id: 'marin', name: 'Marin' },
-  { id: 'sage', name: 'Sage' },
-  { id: 'shimmer', name: 'Shimmer' },
-  { id: 'ash', name: 'Ash' },
-  { id: 'coral', name: 'Coral' },
-  { id: 'alloy', name: 'Alloy' },
-  { id: 'echo', name: 'Echo' },
-  { id: 'ballad', name: 'Ballad' },
-  { id: 'verse', name: 'Verse' },
-  { id: 'cedar', name: 'Cedar' },
+  // OpenAI Default Voices
+  { id: 'alloy', name: 'Alloy (OpenAI)', provider: 'openai' },
+  { id: 'ash', name: 'Ash (OpenAI)', provider: 'openai' },
+  { id: 'ballad', name: 'Ballad (OpenAI)', provider: 'openai' },
+  { id: 'coral', name: 'Coral (OpenAI)', provider: 'openai' },
+  { id: 'echo', name: 'Echo (OpenAI)', provider: 'openai' },
+  { id: 'sage', name: 'Sage (OpenAI)', provider: 'openai' },
+  { id: 'shimmer', name: 'Shimmer (OpenAI)', provider: 'openai' },
+  { id: 'verse', name: 'Verse (OpenAI)', provider: 'openai' },
+  { id: 'marin', name: 'Marin (OpenAI)', provider: 'openai' },
+
+  // ElevenLabs Cloned Voices
+  { id: 'el_sumin', name: '수민 (클론)', provider: 'elevenlabs', voiceId: 'Da4ldXDTb66CahhogG02' },
 ];
 
 export default function VoiceSelector({ currentVoice, onChangeVoice }) {
@@ -25,7 +28,7 @@ export default function VoiceSelector({ currentVoice, onChangeVoice }) {
           <button
             key={v.id}
             className={`voice-pill ${currentVoice === v.id ? 'active' : ''}`}
-            onClick={() => onChangeVoice(v.id)}
+            onClick={() => onChangeVoice(v)}
           >
             {v.name}
           </button>
