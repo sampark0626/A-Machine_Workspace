@@ -408,10 +408,16 @@ export default function App() {
 
         case 'input_audio_buffer.speech_started':
           if (isAgentActuallyPlaying()) {
-            // 에이전트 말 도중 사용자 발화 → 오디오 중단하고 분류 대기
-            stopAgentAudio();
-            agentInterruptModeRef.current = true;
-            console.log('[Client] 에이전트 인터럽트 감지');
+            // 에이전트 발화 중 speech_started → 에코 가드가 마이크를 차단했음에도
+            // 서버 VAD가 반응한 경우. 에코로 간주하고 버퍼를 클리어하여 인터럽트 방지.
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+            }
+          } else if (agentPlayingRef.current) {
+            // agentPlayingRef는 true지만 AudioContext 기준으로는 아직 재생 시작 전 → 동일하게 에코 처리
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+            }
           } else {
             playbackTimeRef.current = playbackContextRef.current?.currentTime || 0;
             setIsModelSpeaking(false);
@@ -554,12 +560,13 @@ export default function App() {
         if (ws.readyState !== WebSocket.OPEN) return;
         if (!sessionReadyRef.current) return;
         
-        // Echo Guard: AI가 말하는 중이거나 스피커로 오디오가 출력 중이고 에코 방지 모드가 켜져 있으면 마이크 전송 일시 차단
+        // Echo Guard: AI 또는 에이전트가 스피커로 출력 중이면 마이크 전송 차단
         const isSpeaking = isModelSpeakingRef.current || (
           playbackContextRef.current &&
           playbackContextRef.current.currentTime < (playbackTimeRef.current + 0.3)
         );
-        if (echoGuardRef.current && isSpeaking) return;
+        const isAgentSpeaking = agentPlayingRef.current || isAgentActuallyPlaying();
+        if (echoGuardRef.current && (isSpeaking || isAgentSpeaking)) return;
 
         const float32 = e.inputBuffer.getChannelData(0);
         const resampled = resampleTo24k(float32, audioCtx.sampleRate);
