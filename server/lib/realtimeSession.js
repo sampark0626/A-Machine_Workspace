@@ -11,6 +11,9 @@ const RECEIVER_NAME = process.env.RECEIVER_NAME || '수민';
 const DEFAULT_VOICE = process.env.OPENAI_REALTIME_VOICE || 'marin';
 const AUDIO_SAMPLE_RATE = 24000;
 
+// Known OpenAI voices list to identify ElevenLabs voices by exclusion
+const OPENAI_VOICES = new Set(['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar']);
+
 const SYSTEM_PROMPT = `## 역할
 당신은 ${RECEIVER_NAME}님을 대신해 전화를 받는 AI 엔서링머신 에이전트 "A-Machine"입니다.
 
@@ -134,8 +137,8 @@ export function handleRealtimeConnection(clientWs, req) {
     }
   }
 
-  // Determine initial ElevenLabs settings based on voice query parameter
-  const isElevenLabs = currentVoice.startsWith('el_');
+  // Determine initial ElevenLabs settings based on voice query parameter (any voice not in OpenAI list is ElevenLabs)
+  const isElevenLabs = !OPENAI_VOICES.has(currentVoice);
   const initialElevenLabsVoiceId = isElevenLabs ? process.env.ELEVENLABS_VOICE_ID : false;
   const elevenLabsSTS = new ElevenLabsSTSStreamer(clientWs, initialElevenLabsVoiceId);
 
@@ -160,7 +163,7 @@ export function handleRealtimeConnection(clientWs, req) {
       // 1. Initial setup when session is created
       if (event.type === 'session.created') {
         console.log('[A-Machine] OpenAI 세션 생성됨');
-        const openAiVoice = currentVoice.startsWith('el_') ? 'alloy' : currentVoice;
+        const openAiVoice = !OPENAI_VOICES.has(currentVoice) ? 'alloy' : currentVoice;
         if (openAiVoice !== currentVoice) {
           console.log(`[A-Machine] 음성 변조 필터 활성화: ${currentVoice} -> OpenAI 베이스라인: ${openAiVoice}`);
         }

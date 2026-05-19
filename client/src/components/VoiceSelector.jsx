@@ -11,7 +11,7 @@ const VOICES = [
   { id: 'marin', name: 'Marin (OpenAI)', provider: 'openai' },
 
   // ElevenLabs Cloned Voices
-  { id: 'el_sumin', name: '수민 (클론)', provider: 'elevenlabs', voiceId: 'Da4ldXDTb66CahhogG02' },
+  { id: 'clone_minseok', name: '민석 (클론)', provider: 'elevenlabs', voiceId: 'Da4ldXDTb66CahhogG02' },
 ];
 
 export default function VoiceSelector({ currentVoice, onChangeVoice }) {
