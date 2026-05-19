@@ -128,6 +128,7 @@ export default function App() {
   const agentPassiveTimerRef = useRef(null);         // passive 지연 타이머
   const agentInterruptModeRef = useRef(false);       // 인터럽트 대기 중 (다음 발화 = 분류 대상)
   const agentContinuationTimerRef = useRef(null);    // 연속 대화 자동 종료 타이머
+  const agentTriggerTypeRef = useRef('keyword');     // 'keyword' | 'auto' — 연속 대화 활성 여부 결정
   const agentWaitingForQuestionRef = useRef(false);  // "에이전트야" 후 질문 대기 중
   const agentMutedRef = useRef(false);               // 쉿 명령 후 오디오 차단
   const lastAgentTextRef = useRef('');
@@ -322,6 +323,7 @@ export default function App() {
             if (agentWaitingForQuestionRef.current) {
               agentWaitingForQuestionRef.current = false;
               lastTriggerTimeRef.current = Date.now();
+              agentTriggerTypeRef.current = 'keyword';
               if (wsRef.current?.readyState === WebSocket.OPEN) {
                 wsRef.current.send(JSON.stringify({
                   type: 'agent.invoke',
@@ -343,9 +345,12 @@ export default function App() {
               if (triggerResult.waitForQuestion) {
                 // 질문 없이 호출어만 → 다음 발화 대기
                 agentWaitingForQuestionRef.current = true;
+                agentTriggerTypeRef.current = 'keyword';
                 lastTriggerTimeRef.current = Date.now();
               } else if (wsRef.current?.readyState === WebSocket.OPEN) {
                 lastTriggerTimeRef.current = Date.now();
+                // auto 트리거(계좌/금액 등)는 한 번 경고 후 연속 대화 없이 종료
+                agentTriggerTypeRef.current = triggerResult.trigger;
                 wsRef.current.send(JSON.stringify({ type: 'agent.invoke', ...triggerResult, agentSettings: agentSettingsRef.current }));
               }
             }
@@ -385,14 +390,16 @@ export default function App() {
             agentPlaybackTimeRef.current = 0;
             agentPassiveTimerRef.current = null;
             setAgentStatus('passive');
-            // 에이전트 발화 완료 후 연속 대화 모드 진입
-            // — 다음 사용자 발화를 자동으로 에이전트 continuation으로 처리
-            agentInterruptModeRef.current = true;
-            if (agentContinuationTimerRef.current) clearTimeout(agentContinuationTimerRef.current);
-            agentContinuationTimerRef.current = setTimeout(() => {
-              agentInterruptModeRef.current = false;
-              agentContinuationTimerRef.current = null;
-            }, 25000); // 25초 침묵 시 연속 대화 모드 종료
+            // 키워드/버튼으로 호출된 경우에만 연속 대화 모드 활성
+            // auto 트리거(계좌/금액/날짜 자동 감지)는 한 번 경고 후 바로 종료
+            if (agentTriggerTypeRef.current === 'keyword') {
+              agentInterruptModeRef.current = true;
+              if (agentContinuationTimerRef.current) clearTimeout(agentContinuationTimerRef.current);
+              agentContinuationTimerRef.current = setTimeout(() => {
+                agentInterruptModeRef.current = false;
+                agentContinuationTimerRef.current = null;
+              }, 25000); // 25초 침묵 시 연속 대화 모드 종료
+            }
           }, remaining + 100);
           break;
         }
@@ -675,6 +682,7 @@ export default function App() {
 
   const invokeAgent = useCallback(() => {
     lastTriggerTimeRef.current = Date.now();
+    agentTriggerTypeRef.current = 'keyword';
     agentWaitingForQuestionRef.current = true;
   }, []);
 
