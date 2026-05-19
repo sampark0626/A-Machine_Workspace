@@ -272,13 +272,23 @@ export function handleRealtimeConnection(clientWs, req) {
         } else if (event.type === 'response.audio_transcript.done' || event.type === 'response.output_audio_transcript.done') {
           lastAgentText = event.transcript || '';
           safeSend(clientWs, { type: 'agent.transcript', text: lastAgentText });
+          // 에이전트 응답을 대화 이력에 추가 (후속 호출 시 맥락 유지)
+          if (lastAgentText) transcript.push({ role: 'agent', text: lastAgentText });
         } else if (event.type === 'response.done') {
           agentRealtimeMode = false;
-          // 어시스트 모드 instructions 원복
+          // 어시스트 모드 instructions + turn_detection 원복
           if (isAssistMode) {
             safeSend(openaiWs, {
               type: 'session.update',
-              session: { type: 'realtime', instructions: buildAssistInstructions(RECEIVER_NAME, assistContext) },
+              session: {
+                type: 'realtime',
+                instructions: buildAssistInstructions(RECEIVER_NAME, assistContext),
+                audio: {
+                  input: {
+                    turn_detection: { type: 'semantic_vad', eagerness: 'auto', create_response: false }
+                  }
+                }
+              },
             });
           }
           safeSend(clientWs, { type: 'agent.passive' });
@@ -369,10 +379,13 @@ export function handleRealtimeConnection(clientWs, req) {
           agentRealtimeMode = true;
           lastAgentSettings = s;
           const question = reason && reason !== '에이전트 호출' ? reason : '통화 내용을 바탕으로 도움이 될 정보를 알려주세요';
-          const conversationText = transcript.length > 0
-            ? '\n\n[통화 맥락]\n' + transcript.map(t => `${t.role === 'caller' ? '발신자' : t.role === 'receiver' ? '수신자' : '사용자'}: ${t.text}`).join('\n')
+          const recentTranscript = transcript.slice(-10);
+          const conversationText = recentTranscript.length > 0
+            ? '\n\n[최근 대화 맥락]\n' + recentTranscript.map(t => {
+                const label = t.role === 'caller' ? '발신자' : t.role === 'receiver' ? '수신자' : t.role === 'agent' ? '에이전트' : '사용자';
+                return `${label}: ${t.text}`;
+              }).join('\n')
             : '';
-          // session.update로 instructions를 에이전트 모드로 전환 후 response.create
           safeSend(openaiWs, {
             type: 'session.update',
             session: {
@@ -403,6 +416,37 @@ export function handleRealtimeConnection(clientWs, req) {
         const { userText } = msg;
         const s = msg.agentSettings || lastAgentSettings || {};
         console.log(`[A-Machine] 에이전트 인터럽트: "${userText}"`);
+        if (!userText) {
+          safeSend(clientWs, { type: 'agent.passive' });
+          return;
+        }
+
+        // OpenAI Realtime 모드: classifyInterrupt 없이 즉시 응답 (레이턴시 제거)
+        if (s.agentType === 'openai-realtime') {
+          safeSend(clientWs, { type: 'agent.active', reason: userText });
+          agentRealtimeMode = true;
+          const recentTranscript = transcript.slice(-10);
+          const conversationText = recentTranscript.length > 0
+            ? '\n\n[최근 대화 맥락]\n' + recentTranscript.map(t => {
+                const label = t.role === 'caller' ? '발신자' : t.role === 'receiver' ? '수신자' : t.role === 'agent' ? '에이전트' : '사용자';
+                return `${label}: ${t.text}`;
+              }).join('\n')
+            : '';
+          safeSend(openaiWs, {
+            type: 'session.update',
+            session: {
+              type: 'realtime',
+              instructions: buildAgentInstructions(assistContext) + conversationText + `\n\n지금 바로 이 질문에 답하세요: ${userText}`,
+            },
+          });
+          safeSend(openaiWs, {
+            type: 'response.create',
+            response: { output_modalities: ['audio'] },
+          });
+          return;
+        }
+
+        // Claude/GPT 모드: classifyInterrupt로 resume vs new 판단
         if (!lastAgentText) {
           safeSend(clientWs, { type: 'agent.passive' });
           return;
@@ -415,21 +459,6 @@ export function handleRealtimeConnection(clientWs, req) {
               return resumeAgent({ text: lastAgentText, clientWs, ttsProvider: s.ttsProvider, ttsVoice: s.ttsVoice });
             } else {
               console.log(`[A-Machine] 새 질문: "${userText}"`);
-              if (s.agentType === 'openai-realtime') {
-                agentRealtimeMode = true;
-                safeSend(openaiWs, {
-                  type: 'session.update',
-                  session: {
-                    type: 'realtime',
-                    instructions: buildAgentInstructions(assistContext) + `\n\n지금 바로 이 질문에 답하세요: ${userText}`,
-                  },
-                });
-                safeSend(openaiWs, {
-                  type: 'response.create',
-                  response: { output_modalities: ['audio'] },
-                });
-                return;
-              }
               const run2 = s.agentType === 'elevenlabs'
                 ? invokeElevenLabsAgent({ transcript, reason: userText, agentId: s.elevenLabsAgentId, clientWs })
                 : invokeAgent({ transcript, reason: userText, assistContext, clientWs, llmModel: s.llmModel, ttsProvider: s.ttsProvider, ttsVoice: s.ttsVoice });

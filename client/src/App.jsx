@@ -125,10 +125,11 @@ export default function App() {
   const agentPlayingRef = useRef(false);        // 에이전트 오디오 재생 중 여부
   const agentPlaybackTimeRef = useRef(0);       // 에이전트 전용 스케줄링 시각 (에코 가드와 분리)
   const agentPlaybackEndTimeRef = useRef(0);    // AudioContext 기준 실제 재생 종료 시각
-  const agentPassiveTimerRef = useRef(null);    // passive 지연 타이머
-  const agentInterruptModeRef = useRef(false);  // 인터럽트 대기 중 (다음 발화 = 분류 대상)
-  const agentWaitingForQuestionRef = useRef(false); // "에이전트야" 후 질문 대기 중
-  const agentMutedRef = useRef(false);          // 쉿 명령 후 오디오 차단
+  const agentPassiveTimerRef = useRef(null);         // passive 지연 타이머
+  const agentInterruptModeRef = useRef(false);       // 인터럽트 대기 중 (다음 발화 = 분류 대상)
+  const agentContinuationTimerRef = useRef(null);    // 연속 대화 자동 종료 타이머
+  const agentWaitingForQuestionRef = useRef(false);  // "에이전트야" 후 질문 대기 중
+  const agentMutedRef = useRef(false);               // 쉿 명령 후 오디오 차단
   const lastAgentTextRef = useRef('');
 
   useEffect(() => { agentSettingsRef.current = agentSettings; }, [agentSettings]);
@@ -356,6 +357,11 @@ export default function App() {
           agentMutedRef.current = false;
           agentSourceNodesRef.current = [];
           agentPlayingRef.current = false;
+          // 연속 대화 자동 종료 타이머 취소
+          if (agentContinuationTimerRef.current) {
+            clearTimeout(agentContinuationTimerRef.current);
+            agentContinuationTimerRef.current = null;
+          }
           // GainNode gain 복원 (쉿/stopAgentAudio 후 다음 응답 재생 가능하게)
           if (agentGainNodeRef.current) {
             agentGainNodeRef.current.gain.setValueAtTime(1, 0);
@@ -366,7 +372,6 @@ export default function App() {
         case 'agent.passive': {
           // 서버는 청크 전송 직후 passive를 보내지만 AudioContext는 아직 재생 중
           // → 실제 재생 종료 시각까지 기다렸다가 passive 처리
-          // 주의: agentSourceNodesRef는 여기서 지우지 않음 (stopAgentAudio에서 처리)
           agentInterruptModeRef.current = false;
           const ctx = playbackContextRef.current;
           const remaining = ctx
@@ -380,7 +385,15 @@ export default function App() {
             agentPlaybackTimeRef.current = 0;
             agentPassiveTimerRef.current = null;
             setAgentStatus('passive');
-          }, remaining + 100); // 100ms 여유
+            // 에이전트 발화 완료 후 연속 대화 모드 진입
+            // — 다음 사용자 발화를 자동으로 에이전트 continuation으로 처리
+            agentInterruptModeRef.current = true;
+            if (agentContinuationTimerRef.current) clearTimeout(agentContinuationTimerRef.current);
+            agentContinuationTimerRef.current = setTimeout(() => {
+              agentInterruptModeRef.current = false;
+              agentContinuationTimerRef.current = null;
+            }, 25000); // 25초 침묵 시 연속 대화 모드 종료
+          }, remaining + 100);
           break;
         }
 
