@@ -18,10 +18,11 @@ function checkTriggers(text, settings, lastTriggerTime) {
   if (!settings || settings.callMode !== 'assist') return null;
   const now = Date.now();
 
-  if (settings.voiceKeyword !== false && /에이전트/.test(text)) {
+  const KEYWORD_RE = /에이머신|에이\s*머신|[Aa]\s*머신|헤이\s*머신|이머신/;
+  if (settings.voiceKeyword !== false && KEYWORD_RE.test(text)) {
     if (now - lastTriggerTime >= COOLDOWN_KEYWORD) {
-      const after = text.match(/에이전트[야아,!]?\s*(.+)/s);
-      const question = after?.[1]?.trim();
+      const after = text.match(/(에이머신|에이\s*머신|[Aa]\s*머신|헤이\s*머신|이머신)[야아,!]?\s*(.+)/s);
+      const question = after?.[2]?.trim();
       if (question) {
         return { trigger: 'keyword', reason: question };
       } else {
@@ -134,7 +135,7 @@ export default function App() {
   const agentInterruptModeRef = useRef(false);       // 인터럽트 대기 중 (다음 발화 = 분류 대상)
   const agentContinuationTimerRef = useRef(null);    // 연속 대화 자동 종료 타이머
   const agentTriggerTypeRef = useRef('keyword');     // 'keyword' | 'auto' — 연속 대화 활성 여부 결정
-  const agentWaitingForQuestionRef = useRef(false);  // "에이전트야" 후 질문 대기 중
+  const agentWaitingForQuestionRef = useRef(false);  // "에이머신" 후 질문 대기 중
   const agentMutedRef = useRef(false);               // 쉿 명령 후 오디오 차단
   const lastAgentTextRef = useRef('');
 
@@ -324,7 +325,7 @@ export default function App() {
               time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
             }]);
 
-            // "에이전트야" 후 질문 대기 중 → 이 발화가 질문
+            // "에이머신" 후 질문 대기 중 → 이 발화가 질문
             if (agentWaitingForQuestionRef.current) {
               agentWaitingForQuestionRef.current = false;
               lastTriggerTimeRef.current = Date.now();
@@ -348,10 +349,13 @@ export default function App() {
             );
             if (triggerResult) {
               if (triggerResult.waitForQuestion) {
-                // 질문 없이 호출어만 → 다음 발화 대기
+                // 질문 없이 호출어만 → "부르셨나요?" 발화 후 다음 발화 대기
                 agentWaitingForQuestionRef.current = true;
                 agentTriggerTypeRef.current = 'keyword';
                 lastTriggerTimeRef.current = Date.now();
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                  wsRef.current.send(JSON.stringify({ type: 'agent.greet' }));
+                }
               } else if (triggerResult.trigger === 'alert') {
                 // 보이스피싱 등 즉각 고정 경고 — agent.alert으로 서버에 전송 (연속 대화 없음)
                 lastTriggerTimeRef.current = Date.now();

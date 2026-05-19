@@ -311,7 +311,7 @@ export default function PhoneUI({
                   <div className={`assist-status-banner ${agentStatus === 'active' ? 'active' : ''}`}>
                     {agentStatus === 'active'
                       ? '에이전트 응답 중 — 이어폰으로 청취하세요'
-                      : '에이전트 대기 중 — "에이전트"라고 말하거나 버튼을 눌러 호출'}
+                      : '에이전트 대기 중 — "에이머신"이라고 말하거나 버튼을 눌러 호출'}
                   </div>
                 </>
               )}

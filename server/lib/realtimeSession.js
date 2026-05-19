@@ -54,7 +54,7 @@ function buildAgentInstructions(assistContext) {
   const dateStr = `${kst.getFullYear()}-${String(kst.getMonth()+1).padStart(2,'0')}-${String(kst.getDate()).padStart(2,'0')}`;
   const dayNames = ['일','월','화','수','목','금','토'];
   const timeStr = `${String(kst.getHours()).padStart(2,'0')}:${String(kst.getMinutes()).padStart(2,'0')}`;
-  return `당신은 통화 중인 사용자 옆에서 즉시 답변해주는 AI 어시스턴트입니다. 질문에 직접 답하고 구체적인 추천·정보를 제공하세요. 마크다운 기호 절대 사용 금지. 2~4문장으로 간결하게. 자연스러운 한국어 구어체. 현재 시간(KST): ${dateStr}(${dayNames[kst.getDay()]}요일) ${timeStr}${assistContext ? ` 참고 정보: ${assistContext}` : ''}`;
+  return `당신은 통화 중인 사용자 옆에서 귓속말로 도와주는 AI 어시스턴트입니다. 질문에 바로 핵심만 1~2문장으로 짧게 답하세요. 서론·마무리 인사 절대 금지. 마크다운 기호 절대 사용 금지. 자연스러운 한국어 구어체. 현재 시간(KST): ${dateStr}(${dayNames[kst.getDay()]}요일) ${timeStr}${assistContext ? ` 참고 정보: ${assistContext}` : ''}`;
 }
 
 // ── Answering Machine System Prompt ───────────────────────────────────────
@@ -364,6 +364,19 @@ export function handleRealtimeConnection(clientWs, req) {
           session: buildAssistSessionConfig(currentVoice, assistContext)
         });
         safeSend(clientWs, { type: 'mode.switched', mode: 'assist' });
+        return;
+      }
+
+      // Keyword trigger greeting — "부르셨나요?" one-shot, then waits for question
+      if (msg.type === 'agent.greet') {
+        const greetText = '부르셨나요?';
+        safeSend(clientWs, { type: 'agent.active', reason: greetText, triggerType: 'keyword' });
+        agentRealtimeMode = true;
+        safeSend(openaiWs, {
+          type: 'session.update',
+          session: { type: 'realtime', instructions: `지금 즉시 이 한 문장만 자연스럽게 말하세요: "${greetText}" 다른 말은 절대 하지 마세요.` },
+        });
+        safeSend(openaiWs, { type: 'response.create', response: { output_modalities: ['audio'] } });
         return;
       }
 
