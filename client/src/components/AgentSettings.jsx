@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS = {
     onDateTime: true,
     onPrice: false,
     onQuestion: false,
+    onAccount: true,
   },
   customKeywords: [],
   assistContext: '',
@@ -21,7 +22,13 @@ const DEFAULT_SETTINGS = {
 export function loadSettings() {
   try {
     const saved = localStorage.getItem('a-machine-settings');
-    return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
+    if (!saved) return DEFAULT_SETTINGS;
+    const parsed = JSON.parse(saved);
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      autoTriggers: { ...DEFAULT_SETTINGS.autoTriggers, ...parsed.autoTriggers },
+    };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -41,9 +48,10 @@ const VOICES = [
 ];
 
 const AUTO_TRIGGER_OPTIONS = [
-  { key: 'onDateTime', icon: '📅', label: '날짜/시간 언급 시', desc: '일정 관련 대화에서 자동 개입' },
-  { key: 'onPrice',    icon: '💰', label: '금액/가격 언급 시', desc: '금액이 나올 때 자동 개입' },
-  { key: 'onQuestion', icon: '❓', label: '질문 받을 때',      desc: '"어때요?", "가능한가요?" 등 감지 시' },
+  { key: 'onDateTime', icon: '📅', label: '날짜/시간 언급 시',  desc: '일정 관련 대화에서 자동 개입' },
+  { key: 'onPrice',    icon: '💰', label: '금액/가격 언급 시',  desc: '금액이 나올 때 자동 개입' },
+  { key: 'onQuestion', icon: '❓', label: '질문 받을 때',       desc: '"어때요?", "가능한가요?" 등 감지 시' },
+  { key: 'onAccount',  icon: '🏦', label: '계좌/금융정보 언급 시', desc: '계좌번호·인증번호 등 언급 시 보이스피싱 경고' },
 ];
 
 export default function AgentSettings({ onClose, onSave, currentVoice, onChangeVoice }) {

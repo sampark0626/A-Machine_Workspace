@@ -9,6 +9,7 @@ const TRIGGER_PATTERNS = {
   onDateTime: /오늘|내일|모레|이번\s*주|다음\s*주|월요일|화요일|수요일|목요일|금요일|토요일|일요일|\d+월\s*\d+일|\d+시(?:\s*반)?|오전|오후|언제/,
   onPrice:    /원|달러|유로|만\s*원|천\s*원|억|백만|천만|\d[\d,]*원/,
   onQuestion: /어떠세요|어때요|가능한가요|괜찮으세요|어떻게\s*생각|가능할까요|어떠신가요|할\s*수\s*있나요|되나요|맞나요/,
+  onAccount:  /계좌|통장|계좌번호|계좌정보|은행|입금|송금|이체|주민등록번호|카드\s*번호|비밀번호|인증번호|OTP|보안카드/,
 };
 const COOLDOWN_KEYWORD = 3000;
 const COOLDOWN_AUTO = 10000;
@@ -32,7 +33,12 @@ function checkTriggers(text, settings, lastTriggerTime) {
 
   for (const [key, pattern] of Object.entries(TRIGGER_PATTERNS)) {
     if (settings.autoTriggers?.[key] && pattern.test(text)) {
-      const labels = { onDateTime: '날짜/시간 언급 감지', onPrice: '금액 언급 감지', onQuestion: '질문 감지' };
+      const labels = {
+        onDateTime: '날짜/시간 언급 감지',
+        onPrice: '금액 언급 감지',
+        onQuestion: '질문 감지',
+        onAccount: `통화 상대방이 계좌번호 또는 금융 정보를 언급했습니다. 보이스피싱 또는 금융사기 가능성을 확인하고, 개인 금융정보(계좌번호, 비밀번호, 인증번호 등)를 절대 알려주지 말 것을 조용히 귓속말로 경고해 주세요. 발화 내용: "${text}"`,
+      };
       return { trigger: 'auto', reason: labels[key] };
     }
   }
