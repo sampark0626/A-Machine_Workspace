@@ -146,9 +146,16 @@ export function handleRealtimeConnection(clientWs, req) {
   }
 
   // Determine initial ElevenLabs settings based on voice query parameter (any voice not in OpenAI list is ElevenLabs)
+  const ELEVENLABS_VOICE_MAPPING = {
+    'clone_minseok': 'Da4ldXDTb66CahhogG02'
+  };
+
   const isElevenLabs = !OPENAI_VOICES.has(currentVoice);
-  const initialElevenLabsVoiceId = isElevenLabs ? process.env.ELEVENLABS_VOICE_ID : false;
+  const initialElevenLabsVoiceId = isElevenLabs
+    ? (process.env.ELEVENLABS_VOICE_ID || ELEVENLABS_VOICE_MAPPING[currentVoice])
+    : false;
   const elevenLabsSTS = new ElevenLabsSTSStreamer(clientWs, initialElevenLabsVoiceId);
+
 
   let sessionReady = false;
 
